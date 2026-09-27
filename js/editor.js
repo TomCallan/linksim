@@ -2309,11 +2309,11 @@
         { id: 8, x: 135, y: 220, fixed: true, mass: 1 }    // Slider rail end
       ],
       rods: [
-        { a: 2, b: 3, length: 90, width: 10, color: '#3b82f6' },
+        { a: 2, b: 3, length: 115, width: 10, color: '#3b82f6' },
         { a: 5, b: 6, length: 80, width: 10, color: '#10b981' }
       ],
       sliders: [
-        { node: 6, aNode: 7, bNode: 8, minT: 10, maxT: 90 }
+        { node: 6, aNode: 7, bNode: 8, minT: 0, maxT: 150 }
       ],
       gears: [
         { centerNode: 0, radius: 50, teeth: 20, meshWith: [1] },
@@ -2593,8 +2593,8 @@
 
         // --- 4-bar linkage (bottom-right) ---
         { id: 17, x: 230, y: 60,   fixed: true, mass: 1 },  // Ground pivot A
-        { id: 18, x: 230, y: -20,  fixed: false, mass: 1 }, // Crank end
-        { id: 19, x: 330, y: -20,  fixed: false, mass: 1 }, // Coupler end
+        { id: 18, x: 230, y: 15,   fixed: false, mass: 1 }, // Crank end
+        { id: 19, x: 320, y: -10,  fixed: false, mass: 1 }, // Coupler end
         { id: 20, x: 360, y: 60,   fixed: true, mass: 1 }   // Ground pivot B
       ],
       rods: [
@@ -2603,9 +2603,9 @@
         { a: 1, b: 2, length: 130, width: 8, color: '#64748b' },   // Connecting rod
 
         // 4-bar linkage
-        { a: 17, b: 18, length: 80, width: 9, color: '#f59e0b' },  // Crank
-        { a: 18, b: 19, length: 105, width: 8, color: '#64748b' }, // Coupler
-        { a: 19, b: 20, length: 82, width: 9, color: '#10b981' }   // Follower
+        { a: 17, b: 18, length: 45, width: 9, color: '#f59e0b' },  // Crank
+        { a: 18, b: 19, length: 95, width: 8, color: '#64748b' },  // Coupler
+        { a: 19, b: 20, length: 80, width: 9, color: '#10b981' }   // Follower
       ],
       springs: [
         // Spring-mass oscillator
