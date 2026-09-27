@@ -60,7 +60,11 @@
   }
 
   function handleResize() {
-    var size = Math.max(320, Math.min(650, Math.floor((window.innerWidth - 60) / 2)));
+    var panel = incanvas.parentElement;
+    var panelWidth = panel ? (panel.clientWidth - 26) : 500;
+    var maxH = window.innerHeight - 260;
+    var size = Math.max(280, Math.min(panelWidth, maxH, 700));
+
     incanvas.width = size;
     incanvas.height = size;
     outcanvas.width = size;

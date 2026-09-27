@@ -53,10 +53,17 @@
       border: 1px solid #cbd5e1;
     }
     .main-grid {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 20px;
-      justify-content: center;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      width: 100%;
+      max-width: 1600px;
+      margin: 0 auto;
+    }
+    @media (max-width: 860px) {
+      .main-grid {
+        grid-template-columns: 1fr;
+      }
     }
     .panel {
       background: #ffffff;
@@ -66,6 +73,13 @@
       box-shadow: 0 1px 3px rgba(0,0,0,0.05);
       display: flex;
       flex-direction: column;
+      min-width: 0;
+    }
+    .canvas-wrap {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 100%;
     }
     .panel-header {
       display: flex;
