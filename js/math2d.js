@@ -189,6 +189,31 @@
           var absT2 = Math.abs(theta);
           return baseRadius + lift * (1.0 - absT2 / Math.PI);
 
+        case 'custom':
+          // Custom vector polygon profile defined by points [[x, y], ...]
+          var pts = options.points;
+          if (!pts || pts.length < 3) return baseRadius;
+          var dx = Math.cos(theta);
+          var dy = Math.sin(theta);
+          var maxDist = 0;
+          var nPts = pts.length;
+          for (var i = 0; i < nPts; i++) {
+            var j = (i + 1) % nPts;
+            var x1 = pts[i][0], y1 = pts[i][1];
+            var x2 = pts[j][0], y2 = pts[j][1];
+            var ex = x2 - x1, ey = y2 - y1;
+            // Solve: [dx -ex; dy -ey] * [s; t] = [x1; y1]
+            var det = dx * (-ey) - dy * (-ex);
+            if (Math.abs(det) > 1e-9) {
+              var s = (x1 * (-ey) - y1 * (-ex)) / det;
+              var t = (dx * y1 - dy * x1) / det;
+              if (s > 0 && t >= 0 && t <= 1) {
+                if (s > maxDist) maxDist = s;
+              }
+            }
+          }
+          return maxDist > 0 ? maxDist : baseRadius;
+
         case 'circle':
         default:
           return baseRadius;
@@ -199,6 +224,10 @@
      * Generate 2D contour points of a cam profile in local coordinates.
      */
     getCamPoints: function(profileType, baseRadius, lift, numPoints, options) {
+      options = options || {};
+      if (profileType === 'custom' && options.points && options.points.length >= 3) {
+        return options.points;
+      }
       numPoints = numPoints || 72;
       var pts = [];
       var dTheta = (Math.PI * 2) / numPoints;

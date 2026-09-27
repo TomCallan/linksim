@@ -142,6 +142,14 @@
       physics.addRod(rod.a, rod.b, rod.length, { width: rod.width, color: rod.color });
     }
 
+    // 2.5 Add helical springs
+    if (model.springs) {
+      for (var sp = 0; sp < model.springs.length; sp++) {
+        var spr = model.springs[sp];
+        physics.addSpring(spr.a, spr.b, spr.restLength, spr.stiffness, spr);
+      }
+    }
+
     // 3. Add brackets (bell cranks)
     if (model.brackets) {
       for (var b = 0; b < model.brackets.length; b++) {
@@ -412,6 +420,8 @@
         selectTool('add_node');
       } else if (e.key === 'r' || e.key === 'R') {
         selectTool('add_rod');
+      } else if (e.key === 'e' || e.key === 'E') {
+        selectTool('add_spring');
       } else if (e.key === 's' || e.key === 'S') {
         selectTool('add_slider');
       } else if (e.key === 'g' || e.key === 'G') {
@@ -419,7 +429,9 @@
       } else if (e.key === 'm' || e.key === 'M') {
         selectTool('add_motor');
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (editor.selectedNodeId !== -1) {
+        if (editor.selection) {
+          editor.deleteSelection();
+        } else if (editor.selectedNodeId !== -1) {
           editor.deleteNode(editor.selectedNodeId);
           editor.selectedNodeId = -1;
         }
@@ -450,8 +462,8 @@
     contextMenuEl.style.display = 'block';
 
     // Position menu safely inside screen bounds
-    var menuW = 200;
-    var menuH = 180;
+    var menuW = 220;
+    var menuH = 220;
     var x = Math.min(clientX, window.innerWidth - menuW - 10);
     var y = Math.min(clientY, window.innerHeight - menuH - 10);
     contextMenuEl.style.left = x + 'px';
@@ -460,7 +472,7 @@
     var items = [];
 
     if (targetType === 'node') {
-      var n = targetData;
+      var n = targetData.item || targetData;
       items.push({
         label: 'Configure Node...',
         action: function() { openInspector('node', n); }
@@ -473,12 +485,30 @@
         label: n.fixed ? 'Free Joint (Unanchor)' : 'Anchor Ground Pin',
         action: function() { editor.toggleFixed(n.id); }
       });
+      if (n.fixed) {
+        items.push({
+          label: n.simplified ? 'Show Full Ground Anchor Stand' : 'Simplify Pin to Point (Hide Stand)',
+          action: function() {
+            editor.saveState();
+            n.simplified = !n.simplified;
+            editor._notifyChange();
+          }
+        });
+      }
       items.push({
         label: 'Connect Rod From Here',
         action: function() {
           selectTool('add_rod');
           editor.connectStartNode = n.id;
           editor.isConnecting = true;
+        }
+      });
+      items.push({
+        label: 'Connect Helical Spring From Here',
+        action: function() {
+          selectTool('add_spring');
+          editor.connectStartNode = n.id;
+          editor.isConnectingSpring = true;
         }
       });
       // Check if near gear to attach
@@ -499,6 +529,10 @@
       items.push({
         label: 'Mount Cam Profile Here (Pear Cam)',
         action: function() { editor.addCam(n.id, 'pear', 35, 25); }
+      });
+      items.push({
+        label: 'Mount Custom Vector Cam Here...',
+        action: function() { openCustomCamModal(n.id); }
       });
       items.push({
         label: 'Mount Pulley Wheel Here',
@@ -522,7 +556,7 @@
       items.push({
         label: 'Drive Gear with Motor',
         action: function() {
-          var g = targetData.gear;
+          var g = targetData.gear || targetData.item || editor.gears[gIdx];
           editor.addMotor(g.centerNode, g.centerNode, 3.0);
         }
       });
@@ -543,6 +577,86 @@
         action: function() {
           editor.saveState();
           editor.rods.splice(rIdx, 1);
+          editor._notifyChange();
+        }
+      });
+    } else if (targetType === 'spring') {
+      var spIdx = targetData.index;
+      items.push({
+        label: 'Configure Spring...',
+        action: function() { openInspector('spring', targetData); }
+      });
+      items.push({
+        label: 'Delete Spring',
+        danger: true,
+        action: function() { editor.deleteSpring(spIdx); }
+      });
+    } else if (targetType === 'pulley') {
+      var pIdx = targetData.index;
+      items.push({
+        label: 'Configure Pulley...',
+        action: function() { openInspector('pulley', targetData); }
+      });
+      items.push({
+        label: 'Delete Pulley',
+        danger: true,
+        action: function() { editor.deletePulley(pIdx); }
+      });
+    } else if (targetType === 'cam') {
+      var cIdx = targetData.index;
+      var cItem = targetData.cam || targetData.item || editor.cams[cIdx];
+      items.push({
+        label: 'Configure Cam Profile & Lift...',
+        action: function() { openInspector('cam', targetData); }
+      });
+      items.push({
+        label: 'Edit Custom Cam Geometry...',
+        action: function() { openCustomCamModal(cItem.centerNode, cIdx); }
+      });
+      items.push({
+        label: 'Delete Cam',
+        danger: true,
+        action: function() { editor.deleteCam(cIdx); }
+      });
+    } else if (targetType === 'slider') {
+      var slIdx = targetData.index;
+      items.push({
+        label: 'Configure Slider Rail...',
+        action: function() { openInspector('slider', targetData); }
+      });
+      items.push({
+        label: 'Delete Slider',
+        danger: true,
+        action: function() { editor.deleteSlider(slIdx); }
+      });
+    } else if (targetType === 'belt') {
+      var bIdx = targetData.index;
+      var bItem = targetData.belt || targetData.item || editor.belts[bIdx];
+      items.push({
+        label: bItem && bItem.crossed ? 'Uncross Belt (Direct Drive)' : 'Cross Belt (Reverse Rotation)',
+        action: function() {
+          editor.saveState();
+          if (bItem) bItem.crossed = !bItem.crossed;
+          editor._notifyChange();
+        }
+      });
+      items.push({
+        label: 'Delete Belt',
+        danger: true,
+        action: function() { editor.deleteBelt(bIdx); }
+      });
+    } else if (targetType === 'geneva') {
+      var genIdx = targetData.index;
+      items.push({
+        label: 'Configure Geneva Mechanism...',
+        action: function() { openInspector('geneva', targetData); }
+      });
+      items.push({
+        label: 'Delete Geneva Mechanism',
+        danger: true,
+        action: function() {
+          editor.saveState();
+          editor.genevas.splice(genIdx, 1);
           editor._notifyChange();
         }
       });
@@ -576,6 +690,12 @@
         action: function() {
           var cId = editor.addNode(pos.x, pos.y, true);
           editor.addCam(cId, 'pear', 35, 25);
+        }
+      });
+      items.push({
+        label: 'Add Cam Profile (Custom Vector Cam...)',
+        action: function() {
+          openCustomCamModal(null);
         }
       });
       items.push({
@@ -642,20 +762,22 @@
     var saveHandler = null;
 
     if (type === 'node') {
-      var n = data;
+      var n = data.item || data;
       titleEl.textContent = 'Configure Node #' + n.id;
       bodyEl.innerHTML = 
         '<div class="form-group"><label><input type="checkbox" id="insFixed" ' + (n.fixed ? 'checked' : '') + '> Ground Pin (Fixed Anchor)</label></div>' +
+        '<div class="form-group"><label><input type="checkbox" id="insSimplified" ' + (n.simplified ? 'checked' : '') + '> Simplify Pin to Point (Hide Stand)</label></div>' +
         '<div class="form-group"><label>Mass (kg)</label><input type="number" id="insMass" value="' + (n.mass || 1.0) + '" step="0.1" min="0.1"></div>';
 
       saveHandler = function() {
         editor.saveState();
         n.fixed = document.getElementById('insFixed').checked;
+        n.simplified = document.getElementById('insSimplified').checked;
         n.mass = parseFloat(document.getElementById('insMass').value) || 1.0;
         editor._notifyChange();
       };
     } else if (type === 'gear') {
-      var g = data.gear;
+      var g = data.gear || data.item || editor.gears[data.index];
       titleEl.textContent = 'Configure Gear';
       bodyEl.innerHTML = 
         '<div class="form-group"><label>Pitch Radius</label><input type="number" id="insRadius" value="' + g.radius + '" step="5" min="15"></div>' +
@@ -668,7 +790,7 @@
         editor._notifyChange();
       };
     } else if (type === 'rod') {
-      var r = data.rod;
+      var r = data.rod || data.item || editor.rods[data.index];
       titleEl.textContent = 'Configure Rod / Link';
       bodyEl.innerHTML = 
         '<div class="form-group"><label>Material Preset</label><select id="insMat">' +
@@ -677,7 +799,6 @@
         '<option value="carbon"' + (r.material === 'carbon' ? ' selected' : '') + '>Carbon Fiber</option>' +
         '<option value="wood"' + (r.material === 'wood' ? ' selected' : '') + '>Composite Wood</option>' +
         '<option value="rubber"' + (r.material === 'rubber' ? ' selected' : '') + '>Rubber / Elastic Band</option>' +
-        '<option value="spring"' + (r.material === 'spring' ? ' selected' : '') + '>Coil Spring</option>' +
         '</select></div>' +
         '<div class="form-group"><label>Length</label><input type="number" id="insLen" value="' + Math.round(r.length) + '" step="1" min="5"></div>' +
         '<div class="form-group"><label>Width</label><input type="number" id="insWidth" value="' + (r.width || 12) + '" step="1" min="4"></div>' +
@@ -692,6 +813,87 @@
         r.length = Math.max(5, parseFloat(document.getElementById('insLen').value) || r.length);
         r.width = Math.max(4, parseInt(document.getElementById('insWidth').value, 10) || r.width);
         r.color = document.getElementById('insColor').value || mat.color;
+        editor._notifyChange();
+      };
+    } else if (type === 'spring') {
+      var spr = data.spring || data.item || editor.springs[data.index];
+      titleEl.textContent = 'Configure Helical Spring';
+      bodyEl.innerHTML = 
+        '<div class="form-group"><label>Rest Length</label><input type="number" id="insRestLen" value="' + Math.round(spr.restLength) + '" step="1" min="5"></div>' +
+        '<div class="form-group"><label>Stiffness (N/m)</label><input type="number" id="insStiff" value="' + spr.stiffness + '" step="20" min="5"></div>' +
+        '<div class="form-group"><label>Damping</label><input type="number" id="insDamp" value="' + (spr.damping || 2.0) + '" step="0.5" min="0"></div>' +
+        '<div class="form-group"><label>Coil Width</label><input type="number" id="insWidth" value="' + (spr.width || 14) + '" step="1" min="6"></div>' +
+        '<div class="form-group"><label>Color</label><input type="color" id="insColor" value="' + (spr.color || '#10b981') + '"></div>';
+
+      saveHandler = function() {
+        editor.saveState();
+        spr.restLength = Math.max(5, parseFloat(document.getElementById('insRestLen').value) || spr.restLength);
+        spr.stiffness = Math.max(1, parseFloat(document.getElementById('insStiff').value) || 200);
+        spr.damping = Math.max(0, parseFloat(document.getElementById('insDamp').value) || 0);
+        spr.width = Math.max(6, parseInt(document.getElementById('insWidth').value, 10) || 14);
+        spr.color = document.getElementById('insColor').value || '#10b981';
+        editor._notifyChange();
+      };
+    } else if (type === 'pulley') {
+      var pul = data.pulley || data.item || editor.pulleys[data.index];
+      titleEl.textContent = 'Configure Pulley';
+      bodyEl.innerHTML = 
+        '<div class="form-group"><label>Radius</label><input type="number" id="insRadius" value="' + pul.radius + '" step="2" min="10"></div>' +
+        '<div class="form-group"><label>Width</label><input type="number" id="insWidth" value="' + (pul.width || 8) + '" step="1" min="4"></div>';
+
+      saveHandler = function() {
+        editor.saveState();
+        pul.radius = Math.max(10, parseFloat(document.getElementById('insRadius').value) || 30);
+        pul.width = Math.max(4, parseInt(document.getElementById('insWidth').value, 10) || 8);
+        editor._notifyChange();
+      };
+    } else if (type === 'cam') {
+      var cam = data.cam || data.item || editor.cams[data.index];
+      titleEl.textContent = 'Configure Cam Profile';
+      bodyEl.innerHTML = 
+        '<div class="form-group"><label>Profile Type</label><select id="insProfile">' +
+        '<option value="pear"' + (cam.profileType === 'pear' ? ' selected' : '') + '>Pear Cam (Harmonic Lobe)</option>' +
+        '<option value="eccentric"' + (cam.profileType === 'eccentric' ? ' selected' : '') + '>Eccentric Circular Cam</option>' +
+        '<option value="snail"' + (cam.profileType === 'snail' ? ' selected' : '') + '>Snail Drop Cam</option>' +
+        '<option value="heart"' + (cam.profileType === 'heart' ? ' selected' : '') + '>Heart / Cardioid Cam</option>' +
+        '<option value="custom"' + (cam.profileType === 'custom' ? ' selected' : '') + '>Custom Vector Geometry</option>' +
+        '</select></div>' +
+        '<div class="form-group"><label>Base Radius</label><input type="number" id="insBaseR" value="' + cam.baseRadius + '" step="2" min="10"></div>' +
+        '<div class="form-group"><label>Lift / Stroke</label><input type="number" id="insLift" value="' + (cam.lift || 20) + '" step="2" min="0"></div>';
+
+      saveHandler = function() {
+        editor.saveState();
+        cam.profileType = document.getElementById('insProfile').value;
+        cam.baseRadius = Math.max(10, parseFloat(document.getElementById('insBaseR').value) || 35);
+        cam.lift = Math.max(0, parseFloat(document.getElementById('insLift').value) || 0);
+        editor._notifyChange();
+      };
+    } else if (type === 'slider') {
+      var sl = data.slider || data.item || editor.sliders[data.index];
+      titleEl.textContent = 'Configure Linear Slider Rail';
+      bodyEl.innerHTML = 
+        '<div class="form-group"><label>Min Travel Limit</label><input type="number" id="insMinT" value="' + (sl.minT || -1000) + '" step="5"></div>' +
+        '<div class="form-group"><label>Max Travel Limit</label><input type="number" id="insMaxT" value="' + (sl.maxT || 1000) + '" step="5"></div>' +
+        '<div class="form-group"><label>Friction Coefficient</label><input type="number" id="insFric" value="' + (sl.friction || 0) + '" step="0.05" min="0"></div>';
+
+      saveHandler = function() {
+        editor.saveState();
+        sl.minT = parseFloat(document.getElementById('insMinT').value) || -1000;
+        sl.maxT = parseFloat(document.getElementById('insMaxT').value) || 1000;
+        sl.friction = Math.max(0, parseFloat(document.getElementById('insFric').value) || 0);
+        editor._notifyChange();
+      };
+    } else if (type === 'geneva') {
+      var gen = data.geneva || data.item || editor.genevas[data.index];
+      titleEl.textContent = 'Configure Geneva Indexer';
+      bodyEl.innerHTML = 
+        '<div class="form-group"><label>Number of Slots</label><input type="number" id="insSlots" value="' + (gen.slots || 4) + '" step="1" min="3" max="12"></div>' +
+        '<div class="form-group"><label>Slot Width</label><input type="number" id="insSlotW" value="' + (gen.slotWidth || 10) + '" step="1" min="4"></div>';
+
+      saveHandler = function() {
+        editor.saveState();
+        gen.slots = Math.max(3, parseInt(document.getElementById('insSlots').value, 10) || 4);
+        gen.slotWidth = Math.max(4, parseInt(document.getElementById('insSlotW').value, 10) || 10);
         editor._notifyChange();
       };
     }
@@ -710,6 +912,187 @@
   function closeInspector() {
     var modal = document.getElementById('inspectorModal');
     if (modal) modal.style.display = 'none';
+  }
+
+  function openCustomCamModal(nodeId, camIdx) {
+    var modal = document.getElementById('camDesignerModal');
+    var selectPreset = document.getElementById('camPresetSelect');
+    var inputBaseR = document.getElementById('camBaseRadius');
+    var inputLift = document.getElementById('camLift');
+    var textPoints = document.getElementById('camPointsText');
+    var previewCanvas = document.getElementById('camPreviewCanvas');
+    var btnClose = document.getElementById('btnCamDesignerClose');
+    var btnCancel = document.getElementById('btnCamDesignerCancel');
+    var btnSave = document.getElementById('btnCamDesignerSave');
+    if (!modal || !previewCanvas) return;
+
+    var previewCtx = previewCanvas.getContext('2d');
+    var currentCam = (camIdx !== undefined && camIdx !== null && editor.cams[camIdx]) ? editor.cams[camIdx] : null;
+
+    if (currentCam) {
+      inputBaseR.value = currentCam.baseRadius || 35;
+      inputLift.value = currentCam.lift !== undefined ? currentCam.lift : 25;
+      if (currentCam.options && currentCam.options.points) {
+        textPoints.value = JSON.stringify(currentCam.options.points);
+        selectPreset.value = 'freeform';
+      } else {
+        selectPreset.value = currentCam.profileType || 'pear';
+      }
+    } else {
+      inputBaseR.value = 35;
+      inputLift.value = 25;
+      selectPreset.value = 'trochoid';
+    }
+
+    function generatePointsForPreset(preset, rBase, lift) {
+      rBase = parseFloat(rBase) || 35;
+      lift = parseFloat(lift) || 25;
+      var pts = [];
+      if (preset === 'pear') {
+        pts = Math2D.getCamPoints('pear', rBase, lift, 72, { lobeAngle: 65 });
+      } else if (preset === 'heart') {
+        pts = Math2D.getCamPoints('heart', rBase, lift, 72);
+      } else if (preset === 'snail') {
+        pts = Math2D.getCamPoints('snail', rBase, lift, 72);
+      } else if (preset === 'trochoid') {
+        // 3-Lobe Trochoidal Rotor Profile
+        for (var i = 0; i < 72; i++) {
+          var a = (i / 72) * Math.PI * 2;
+          var r = rBase + lift * 0.5 * (1 + Math.cos(3 * a));
+          pts.push([Math.round(r * Math.cos(a) * 10) / 10, Math.round(r * Math.sin(a) * 10) / 10]);
+        }
+      } else if (preset === 'clover') {
+        // 4-Leaf Clover
+        for (var i = 0; i < 72; i++) {
+          var a = (i / 72) * Math.PI * 2;
+          var r = rBase + lift * 0.5 * (1 + Math.cos(4 * a));
+          pts.push([Math.round(r * Math.cos(a) * 10) / 10, Math.round(r * Math.sin(a) * 10) / 10]);
+        }
+      } else if (preset === 'hexagon') {
+        for (var i = 0; i < 6; i++) {
+          var a = (i / 6) * Math.PI * 2;
+          var r = rBase + lift;
+          pts.push([Math.round(r * Math.cos(a)), Math.round(r * Math.sin(a))]);
+        }
+      } else if (preset === 'star') {
+        for (var i = 0; i < 10; i++) {
+          var a = (i / 10) * Math.PI * 2;
+          var r = (i % 2 === 0) ? (rBase + lift) : rBase;
+          pts.push([Math.round(r * Math.cos(a)), Math.round(r * Math.sin(a))]);
+        }
+      } else {
+        try {
+          pts = JSON.parse(textPoints.value);
+        } catch(e) {
+          pts = Math2D.getCamPoints('pear', rBase, lift, 36);
+        }
+      }
+      return pts;
+    }
+
+    function updatePreview() {
+      var pts = [];
+      var preset = selectPreset.value;
+      if (preset === 'freeform') {
+        try {
+          pts = JSON.parse(textPoints.value);
+        } catch(e) {
+          pts = [];
+        }
+      } else {
+        pts = generatePointsForPreset(preset, inputBaseR.value, inputLift.value);
+        textPoints.value = JSON.stringify(pts);
+      }
+
+      previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+      var cx = previewCanvas.width / 2;
+      var cy = previewCanvas.height / 2;
+
+      // Draw grid
+      previewCtx.strokeStyle = '#f1f5f9';
+      previewCtx.lineWidth = 1;
+      previewCtx.beginPath();
+      previewCtx.moveTo(cx, 0); previewCtx.lineTo(cx, previewCanvas.height);
+      previewCtx.moveTo(0, cy); previewCtx.lineTo(previewCanvas.width, cy);
+      previewCtx.stroke();
+
+      if (pts && pts.length >= 3) {
+        previewCtx.save();
+        previewCtx.translate(cx, cy);
+
+        // Draw cam contour
+        previewCtx.beginPath();
+        previewCtx.moveTo(pts[0][0], pts[0][1]);
+        for (var i = 1; i < pts.length; i++) {
+          previewCtx.lineTo(pts[i][0], pts[i][1]);
+        }
+        previewCtx.closePath();
+        previewCtx.fillStyle = '#cbd5e1';
+        previewCtx.fill();
+        previewCtx.lineWidth = 2;
+        previewCtx.strokeStyle = '#334155';
+        previewCtx.stroke();
+
+        // Hub & bore
+        previewCtx.beginPath();
+        previewCtx.arc(0, 0, 10, 0, Math.PI * 2);
+        previewCtx.fillStyle = '#64748b';
+        previewCtx.fill();
+        previewCtx.stroke();
+
+        previewCtx.beginPath();
+        previewCtx.arc(0, 0, 4, 0, Math.PI * 2);
+        previewCtx.fillStyle = '#0f172a';
+        previewCtx.fill();
+
+        previewCtx.restore();
+      }
+    }
+
+    selectPreset.onchange = updatePreview;
+    inputBaseR.oninput = updatePreview;
+    inputLift.oninput = updatePreview;
+    textPoints.oninput = function() {
+      selectPreset.value = 'freeform';
+      updatePreview();
+    };
+
+    updatePreview();
+    modal.style.display = 'flex';
+
+    function closeCamModal() {
+      modal.style.display = 'none';
+    }
+
+    btnClose.onclick = closeCamModal;
+    btnCancel.onclick = closeCamModal;
+
+    btnSave.onclick = function() {
+      var pts = [];
+      try {
+        pts = JSON.parse(textPoints.value);
+      } catch(e) {
+        pts = generatePointsForPreset(selectPreset.value, inputBaseR.value, inputLift.value);
+      }
+      var bRadius = parseFloat(inputBaseR.value) || 35;
+      var cLift = parseFloat(inputLift.value) || 25;
+
+      editor.saveState();
+      if (currentCam) {
+        currentCam.profileType = 'custom';
+        currentCam.baseRadius = bRadius;
+        currentCam.lift = cLift;
+        currentCam.options = { points: pts };
+      } else {
+        var targetNode = nodeId;
+        if (targetNode === null || targetNode === undefined) {
+          targetNode = editor.addNode(0, 0, true);
+        }
+        editor.addCam(targetNode, 'custom', bRadius, cLift, { points: pts });
+      }
+      editor._notifyChange();
+      closeCamModal();
+    };
   }
 
   function loop(timestamp) {

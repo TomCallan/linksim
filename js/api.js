@@ -96,6 +96,12 @@
               physics.addAxle(ax.targetA, ax.targetB, ax);
             }
           }
+          if (spec.springs) {
+            for (var sp = 0; sp < spec.springs.length; sp++) {
+              var spr = spec.springs[sp];
+              physics.addSpring(spr.a, spr.b, spr.restLength, spr.stiffness, spr);
+            }
+          }
           if (spec.motors) {
             for (var m = 0; m < spec.motors.length; m++) {
               var mot = spec.motors[m];
@@ -125,6 +131,12 @@
           return lastRod;
         }
         if (physics) return physics.addRod(a, b, length, style, materialKey);
+        return null;
+      },
+
+      addSpring: function(a, b, restLength, stiffness, options) {
+        if (editor) return editor.addSpring(a, b, Object.assign({ restLength: restLength, stiffness: stiffness }, options));
+        if (physics) return physics.addSpring(a, b, restLength, stiffness, options);
         return null;
       },
 
@@ -308,10 +320,14 @@
         var axles = physics.axles.map(function(ax) {
           return { targetA: ax.targetA, targetB: ax.targetB, ratio: ax.ratio };
         });
+        var springs = (physics.springs || []).map(function(s) {
+          return { a: s.a, b: s.b, restLength: s.restLength, stiffness: s.stiffness, force: s.force, currentLength: s.currentLength };
+        });
         return {
           time: physics.time,
           nodes: nodes,
           rods: rods,
+          springs: springs,
           gears: gears,
           motors: motors,
           genevas: genevas,

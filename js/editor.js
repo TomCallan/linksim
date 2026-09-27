@@ -34,7 +34,11 @@
     this.axles = [];          // [{ targetA, targetB, shaftNodeA, shaftNodeB }]
     this.cams = [];           // [{ centerNode, profileType, baseRadius, lift, options }]
     this.camContacts = [];    // [{ camIdx, followerNode, rollerRadius }]
+    this.springs = [];        // [{ a, b, restLength, stiffness, width, color }]
     this.trackedNodes = new Set(); // Node IDs being tracked for motion paths
+
+    // Selection state for all elements
+    this.selection = null;    // { type: 'node'|'gear'|'pulley'|'cam'|'rod'|'spring'|'slider'|'belt'|'geneva', index: number, item: any }
 
     // Viewport pan/zoom
     this.panX = canvas.width / 2;
@@ -45,17 +49,19 @@
     this.mode = 'edit';
 
     // Tool state
-    this.activeTool = 'select'; // 'select', 'add_pin', 'add_node', 'add_rod', 'add_slider', 'add_gear', 'add_motor', 'add_bracket', 'add_pulley', 'add_belt', 'add_cam', 'add_axle', 'delete'
+    this.activeTool = 'select'; // 'select', 'add_pin', 'add_node', 'add_rod', 'add_spring', 'add_slider', 'add_gear', 'add_pulley', 'add_belt', 'add_cam', 'add_motor', 'delete'
     this.selectedNodeId = -1;
     this.hoverNodeId = -1;
     this.hoverGearIdx = -1;
     this.hoverRodIdx = -1;
     this.hoverPulleyIdx = -1;
     this.hoverCamIdx = -1;
+    this.hoverSpringIdx = -1;
 
     // Interaction flags
     this.isDragging = false;
     this.isConnecting = false;
+    this.isConnectingSpring = false;
     this.connectStartNode = -1;
     this.mouseWorldX = 0;
     this.mouseWorldY = 0;
@@ -186,6 +192,100 @@
     return -1;
   };
 
+  MechanismEditor.prototype.findSpringNear = function(wx, wy, threshold) {
+    threshold = (threshold || 12) / this.zoom;
+    for (var i = this.springs.length - 1; i >= 0; i--) {
+      var s = this.springs[i];
+      var na = this.getNodeById(s.a);
+      var nb = this.getNodeById(s.b);
+      if (na && nb) {
+        var proj = [];
+        Math2D.projectPointOnLine(wx, wy, na.x, na.y, nb.x, nb.y, proj);
+        if (proj[2] >= 0 && proj[2] <= 1) {
+          var d = Math2D.dist(wx, wy, proj[0], proj[1]);
+          if (d <= threshold) return i;
+        }
+      }
+    }
+    return -1;
+  };
+
+  MechanismEditor.prototype.findSliderNear = function(wx, wy, threshold) {
+    threshold = (threshold || 14) / this.zoom;
+    for (var i = this.sliders.length - 1; i >= 0; i--) {
+      var s = this.sliders[i];
+      var sn = this.getNodeById(s.node);
+      if (sn && Math2D.dist(wx, wy, sn.x, sn.y) <= threshold * 1.5) {
+        return i;
+      }
+    }
+    return -1;
+  };
+
+  MechanismEditor.prototype.findBeltNear = function(wx, wy, threshold) {
+    threshold = (threshold || 10) / this.zoom;
+    for (var i = this.belts.length - 1; i >= 0; i--) {
+      var b = this.belts[i];
+      var pA = this.pulleys[b.pulleyA];
+      var pB = this.pulleys[b.pulleyB];
+      if (pA && pB) {
+        var nA = this.getNodeById(pA.nodeId);
+        var nB = this.getNodeById(pB.nodeId);
+        if (nA && nB) {
+          var proj = [];
+          Math2D.projectPointOnLine(wx, wy, nA.x, nA.y, nB.x, nB.y, proj);
+          if (proj[2] >= 0 && proj[2] <= 1) {
+            var d = Math2D.dist(wx, wy, proj[0], proj[1]);
+            if (d <= Math.max(pA.radius, pB.radius) + threshold) return i;
+          }
+        }
+      }
+    }
+    return -1;
+  };
+
+  MechanismEditor.prototype.findGenevaNear = function(wx, wy) {
+    for (var i = this.genevas.length - 1; i >= 0; i--) {
+      var gen = this.genevas[i];
+      var c2 = this.getNodeById(gen.genevaCenterNode);
+      if (c2 && Math2D.dist(wx, wy, c2.x, c2.y) <= gen.radius * 1.2) {
+        return i;
+      }
+    }
+    return -1;
+  };
+
+  MechanismEditor.prototype.findElementNear = function(wx, wy) {
+    var nId = this.findNodeNear(wx, wy);
+    if (nId !== -1) return { type: 'node', index: nId, id: nId, item: this.getNodeById(nId) };
+
+    var camIdx = this.findCamNear(wx, wy);
+    if (camIdx !== -1) return { type: 'cam', index: camIdx, item: this.cams[camIdx] };
+
+    var pulIdx = this.findPulleyNear(wx, wy);
+    if (pulIdx !== -1) return { type: 'pulley', index: pulIdx, item: this.pulleys[pulIdx] };
+
+    var gearIdx = this.findGearNear(wx, wy);
+    if (gearIdx !== -1) return { type: 'gear', index: gearIdx, item: this.gears[gearIdx] };
+
+    var genIdx = this.findGenevaNear(wx, wy);
+    if (genIdx !== -1) return { type: 'geneva', index: genIdx, item: this.genevas[genIdx] };
+
+    var slIdx = this.findSliderNear(wx, wy);
+    if (slIdx !== -1) return { type: 'slider', index: slIdx, item: this.sliders[slIdx] };
+
+    var spIdx = this.findSpringNear(wx, wy);
+    if (spIdx !== -1) return { type: 'spring', index: spIdx, item: this.springs[spIdx] };
+
+    var rodIdx = this.findRodNear(wx, wy);
+    if (rodIdx !== -1) return { type: 'rod', index: rodIdx, item: this.rods[rodIdx] };
+
+    var beltIdx = this.findBeltNear(wx, wy);
+    if (beltIdx !== -1) return { type: 'belt', index: beltIdx, item: this.belts[beltIdx] };
+
+    return null;
+  };
+
   MechanismEditor.prototype.getNodeById = function(id) {
     for (var i = 0; i < this.nodes.length; i++) {
       if (this.nodes[i].id === id) return this.nodes[i];
@@ -196,6 +296,7 @@
   MechanismEditor.prototype.setTool = function(tool) {
     this.activeTool = tool;
     this.isConnecting = false;
+    this.isConnectingSpring = false;
     this.connectStartNode = -1;
     this.render();
   };
@@ -245,6 +346,33 @@
       color: (style && style.color) || '#3b82f6'
     });
     this._notifyChange();
+  };
+
+  MechanismEditor.prototype.addSpring = function(aId, bId, options) {
+    if (aId === bId) return;
+    for (var i = 0; i < this.springs.length; i++) {
+      var s = this.springs[i];
+      if ((s.a === aId && s.b === bId) || (s.a === bId && s.b === aId)) return;
+    }
+    var na = this.getNodeById(aId);
+    var nb = this.getNodeById(bId);
+    if (!na || !nb) return;
+
+    this.saveState();
+    options = options || {};
+    var len = Math2D.dist(na.x, na.y, nb.x, nb.y);
+    var spring = {
+      a: aId,
+      b: bId,
+      restLength: options.restLength !== undefined ? options.restLength : len,
+      stiffness: options.stiffness !== undefined ? options.stiffness : 200.0,
+      damping: options.damping !== undefined ? options.damping : 2.0,
+      width: options.width || 14,
+      color: options.color || '#10b981'
+    };
+    this.springs.push(spring);
+    this._notifyChange();
+    return spring;
   };
 
   MechanismEditor.prototype.addRigidBracket = function(aId, bId, cId) {
@@ -351,21 +479,10 @@
   };
 
   MechanismEditor.prototype.deleteElementAt = function(wx, wy) {
-    var nearNode = this.findNodeNear(wx, wy, 16);
-    if (nearNode !== -1) {
-      this.deleteNode(nearNode);
-      return;
-    }
-    var nearRod = this.findRodNear(wx, wy, 12);
-    if (nearRod !== -1) {
-      this.saveState();
-      this.rods.splice(nearRod, 1);
-      this._notifyChange();
-      return;
-    }
-    var nearGear = this.findGearNear(wx, wy);
-    if (nearGear !== -1) {
-      this.deleteGear(nearGear);
+    var elem = this.findElementNear(wx, wy);
+    if (elem) {
+      this.selection = elem;
+      this.deleteSelection();
       return;
     }
   };
@@ -373,14 +490,24 @@
   MechanismEditor.prototype.deleteNode = function(id) {
     this.saveState();
     this.rods = this.rods.filter(function(r) { return r.a !== id && r.b !== id; });
+    this.springs = (this.springs || []).filter(function(s) { return s.a !== id && s.b !== id; });
     this.sliders = this.sliders.filter(function(s) { return s.node !== id && s.aNode !== id && s.bNode !== id; });
     this.gears = this.gears.filter(function(g) { return g.centerNode !== id; });
     this.motors = this.motors.filter(function(m) { return m.centerNode !== id && m.crankNode !== id; });
     this.brackets = this.brackets.filter(function(b) { return b.a !== id && b.b !== id && b.c !== id; });
+    this.cams = (this.cams || []).filter(function(c) { return c.centerNode !== id; });
+    this.camContacts = (this.camContacts || []).filter(function(cc) { return cc.followerNode !== id; });
+    this.pulleys = (this.pulleys || []).filter(function(p) { return p.nodeId !== id; });
+    this.genevas = (this.genevas || []).filter(function(g) {
+      return g.driverCenterNode !== id && g.driverPinNode !== id && g.genevaCenterNode !== id;
+    });
     this.nodes = this.nodes.filter(function(n) { return n.id !== id; });
     this.trackedNodes.delete(id);
     if (this.renderer && this.renderer.traces) {
       delete this.renderer.traces[id];
+    }
+    if (this.selection && this.selection.type === 'node' && (this.selection.id === id || this.selection.index === id)) {
+      this.selection = null;
     }
     this._notifyChange();
   };
@@ -388,19 +515,125 @@
   MechanismEditor.prototype.deleteGear = function(gearIdx) {
     this.saveState();
     this.gears.splice(gearIdx, 1);
-    // Remove mesh connections
     for (var i = 0; i < this.gears.length; i++) {
       this.gears[i].meshWith = this.gears[i].meshWith
         .filter(function(idx) { return idx !== gearIdx; })
         .map(function(idx) { return idx > gearIdx ? idx - 1 : idx; });
     }
+    if (this.selection && this.selection.type === 'gear' && this.selection.index === gearIdx) {
+      this.selection = null;
+    }
     this._notifyChange();
+  };
+
+  MechanismEditor.prototype.deleteSpring = function(springIdx) {
+    if (springIdx >= 0 && springIdx < this.springs.length) {
+      this.saveState();
+      this.springs.splice(springIdx, 1);
+      if (this.selection && this.selection.type === 'spring' && this.selection.index === springIdx) {
+        this.selection = null;
+      }
+      this._notifyChange();
+    }
+  };
+
+  MechanismEditor.prototype.deletePulley = function(pulleyIdx) {
+    if (pulleyIdx >= 0 && pulleyIdx < this.pulleys.length) {
+      this.saveState();
+      this.belts = this.belts.filter(function(b) {
+        return b.pulleyA !== pulleyIdx && b.pulleyB !== pulleyIdx;
+      }).map(function(b) {
+        return {
+          pulleyA: b.pulleyA > pulleyIdx ? b.pulleyA - 1 : b.pulleyA,
+          pulleyB: b.pulleyB > pulleyIdx ? b.pulleyB - 1 : b.pulleyB,
+          crossed: b.crossed,
+          width: b.width
+        };
+      });
+      this.pulleys.splice(pulleyIdx, 1);
+      if (this.selection && this.selection.type === 'pulley' && this.selection.index === pulleyIdx) {
+        this.selection = null;
+      }
+      this._notifyChange();
+    }
+  };
+
+  MechanismEditor.prototype.deleteCam = function(camIdx) {
+    if (camIdx >= 0 && camIdx < this.cams.length) {
+      this.saveState();
+      this.camContacts = this.camContacts.filter(function(cc) { return cc.camIdx !== camIdx; })
+        .map(function(cc) {
+          return {
+            camIdx: cc.camIdx > camIdx ? cc.camIdx - 1 : cc.camIdx,
+            followerNode: cc.followerNode,
+            rollerRadius: cc.rollerRadius
+          };
+        });
+      this.cams.splice(camIdx, 1);
+      if (this.selection && this.selection.type === 'cam' && this.selection.index === camIdx) {
+        this.selection = null;
+      }
+      this._notifyChange();
+    }
+  };
+
+  MechanismEditor.prototype.deleteBelt = function(beltIdx) {
+    if (beltIdx >= 0 && beltIdx < this.belts.length) {
+      this.saveState();
+      this.belts.splice(beltIdx, 1);
+      if (this.selection && this.selection.type === 'belt' && this.selection.index === beltIdx) {
+        this.selection = null;
+      }
+      this._notifyChange();
+    }
+  };
+
+  MechanismEditor.prototype.deleteSlider = function(sliderIdx) {
+    if (sliderIdx >= 0 && sliderIdx < this.sliders.length) {
+      this.saveState();
+      this.sliders.splice(sliderIdx, 1);
+      if (this.selection && this.selection.type === 'slider' && this.selection.index === sliderIdx) {
+        this.selection = null;
+      }
+      this._notifyChange();
+    }
+  };
+
+  MechanismEditor.prototype.deleteSelection = function() {
+    if (!this.selection) return;
+    var type = this.selection.type;
+    var idx = this.selection.index;
+    if (type === 'node') {
+      this.deleteNode(this.selection.id !== undefined ? this.selection.id : idx);
+    } else if (type === 'gear') {
+      this.deleteGear(idx);
+    } else if (type === 'pulley') {
+      this.deletePulley(idx);
+    } else if (type === 'cam') {
+      this.deleteCam(idx);
+    } else if (type === 'rod') {
+      this.saveState();
+      this.rods.splice(idx, 1);
+      this._notifyChange();
+    } else if (type === 'spring') {
+      this.deleteSpring(idx);
+    } else if (type === 'belt') {
+      this.deleteBelt(idx);
+    } else if (type === 'slider') {
+      this.deleteSlider(idx);
+    } else if (type === 'geneva') {
+      this.saveState();
+      this.genevas.splice(idx, 1);
+      this._notifyChange();
+    }
+    this.selection = null;
   };
 
   MechanismEditor.prototype.clear = function() {
     this.saveState();
     this.nodes = [];
     this.rods = [];
+    this.springs = [];
     this.sliders = [];
     this.gears = [];
     this.motors = [];
@@ -411,12 +644,14 @@
     this.axles = [];
     this.cams = [];
     this.camContacts = [];
+    this.selection = null;
     this.trackedNodes.clear();
     if (this.renderer) {
       this.renderer.clearTraces();
     }
     this.selectedNodeId = -1;
     this.isConnecting = false;
+    this.isConnectingSpring = false;
     this._notifyChange();
   };
 
@@ -432,6 +667,7 @@
       version: '2.0',
       nodes: JSON.parse(JSON.stringify(this.nodes)),
       rods: JSON.parse(JSON.stringify(this.rods)),
+      springs: JSON.parse(JSON.stringify(this.springs || [])),
       sliders: JSON.parse(JSON.stringify(this.sliders)),
       gears: JSON.parse(JSON.stringify(this.gears)),
       motors: JSON.parse(JSON.stringify(this.motors)),
@@ -449,6 +685,7 @@
     if (!data) return;
     this.nodes = data.nodes || [];
     this.rods = data.rods || [];
+    this.springs = data.springs || [];
     this.sliders = data.sliders || [];
     this.gears = data.gears || [];
     this.motors = data.motors || [];
@@ -460,7 +697,9 @@
     this.cams = data.cams || [];
     this.camContacts = data.camContacts || [];
     this.selectedNodeId = -1;
+    this.selection = null;
     this.isConnecting = false;
+    this.isConnectingSpring = false;
     this._notifyChange();
   };
 
@@ -566,6 +805,7 @@
   MechanismEditor.prototype._bindEvents = function() {
     var self = this;
     var canvas = this.canvas;
+    if (!canvas || !canvas.addEventListener) return;
 
     canvas.addEventListener('mousedown', function(e) {
       var w = self.screenToWorld(e.clientX, e.clientY);
@@ -575,27 +815,25 @@
       // Right Click = Context Menu
       if (e.button === 2) {
         e.preventDefault();
-        var nearNode = self.findNodeNear(w.x, w.y);
-        var nearRod = self.findRodNear(w.x, w.y);
-        var nearGear = self.findGearNear(w.x, w.y);
-
+        var elem = self.findElementNear(w.x, w.y);
         var targetType = 'empty';
         var targetData = { x: w.x, y: w.y };
 
-        if (nearNode !== -1) {
-          targetType = 'node';
-          targetData = self.getNodeById(nearNode);
-        } else if (nearGear !== -1) {
-          targetType = 'gear';
-          targetData = { index: nearGear, gear: self.gears[nearGear] };
-        } else if (nearRod !== -1) {
-          targetType = 'rod';
-          targetData = { index: nearRod, rod: self.rods[nearRod] };
+        if (elem) {
+          self.selection = elem;
+          targetType = elem.type;
+          targetData = elem.item;
+          if (elem.type === 'node') {
+            self.selectedNodeId = elem.index;
+          }
+        } else {
+          self.selection = null;
         }
 
         if (self.onShowContextMenu) {
-          self.onShowContextMenu(e.clientX, e.clientY, targetType, targetData);
+          self.onShowContextMenu(e.clientX, e.clientY, targetType, elem || targetData);
         }
+        self.render();
         return;
       }
 
@@ -635,47 +873,58 @@
         return;
       }
 
-      // In Edit Mode:
-      // If clicking directly on an element
-      if (nearNode !== -1) {
+      // In Edit Mode: Universal Element Selection and Tool Interactions
+      var elem = self.findElementNear(w.x, w.y);
+
+      if (elem) {
         if (self.activeTool === 'select') {
-          self.selectedNodeId = nearNode;
-          self.isDragging = true;
-        } else if (self.activeTool === 'add_rod') {
-          self.connectStartNode = nearNode;
-          self.isConnecting = true;
-        } else if (self.activeTool === 'add_gear') {
-          self.addGear(nearNode, 45, 15);
-        } else if (self.activeTool === 'add_motor') {
-          if (!self._motorCenter) {
-            self._motorCenter = nearNode;
-          } else if (self._motorCenter !== nearNode) {
-            self.addMotor(self._motorCenter, nearNode);
-            self._motorCenter = null;
-          }
-        } else if (self.activeTool === 'add_slider') {
-          if (!self._sliderRailStart) {
-            self._sliderRailStart = nearNode;
-          } else if (self._sliderRailStart !== nearNode) {
-            var sNode = self.addNode((self.getNodeById(self._sliderRailStart).x + self.getNodeById(nearNode).x) / 2,
-                                     (self.getNodeById(self._sliderRailStart).y + self.getNodeById(nearNode).y) / 2, false);
-            self.addSlider(sNode, self._sliderRailStart, nearNode);
-            self._sliderRailStart = null;
+          self.selection = elem;
+          if (elem.type === 'node') {
+            self.selectedNodeId = elem.index;
+            self.isDragging = true;
           }
         } else if (self.activeTool === 'delete') {
-          self.deleteNode(nearNode);
+          self.selection = elem;
+          self.deleteSelection();
+        } else if (self.activeTool === 'add_rod' && elem.type === 'node') {
+          self.connectStartNode = elem.index;
+          self.isConnecting = true;
+        } else if (self.activeTool === 'add_spring' && elem.type === 'node') {
+          self.connectStartNode = elem.index;
+          self.isConnectingSpring = true;
+        } else if (self.activeTool === 'add_gear' && elem.type === 'node') {
+          self.addGear(elem.index, 45, 15);
+        } else if (self.activeTool === 'add_pulley' && elem.type === 'node') {
+          self.addPulley(elem.index, 35);
+        } else if (self.activeTool === 'add_cam' && elem.type === 'node') {
+          self.addCam(elem.index, 'pear', 35, 25);
+        } else if (self.activeTool === 'add_motor' && elem.type === 'node') {
+          if (!self._motorCenter) {
+            self._motorCenter = elem.index;
+          } else if (self._motorCenter !== elem.index) {
+            self.addMotor(self._motorCenter, elem.index);
+            self._motorCenter = null;
+          }
+        } else if (self.activeTool === 'add_slider' && elem.type === 'node') {
+          if (!self._sliderRailStart) {
+            self._sliderRailStart = elem.index;
+          } else if (self._sliderRailStart !== elem.index) {
+            var sNode = self.addNode((self.getNodeById(self._sliderRailStart).x + self.getNodeById(elem.index).x) / 2,
+                                     (self.getNodeById(self._sliderRailStart).y + self.getNodeById(elem.index).y) / 2, false);
+            self.addSlider(sNode, self._sliderRailStart, elem.index);
+            self._sliderRailStart = null;
+          }
         }
         self.render();
         return;
       }
 
-      if (nearGear !== -1 && self.activeTool === 'delete') {
-        self.deleteGear(nearGear);
-        self.render();
-        return;
+      // If clicking in EMPTY space:
+      if (self.activeTool === 'select') {
+        self.selection = null;
+        self.selectedNodeId = -1;
       }
 
-      // If clicking in EMPTY space:
       // Enable Universal Drag-to-Pan: if mouse moves, it pans; if stationary click, it performs the tool!
       self.isPotentialPan = true;
       self.panMouseDownX = e.clientX;
@@ -759,50 +1008,65 @@
       self.render();
     });
 
-    window.addEventListener('mouseup', function(e) {
-      if (self.isPotentialPan && !self.isPanning && self._pendingEmptyClick) {
-        var tool = self._pendingEmptyClick.tool;
-        var ex = self._pendingEmptyClick.wx;
-        var ey = self._pendingEmptyClick.wy;
-        if (tool === 'add_node') {
-          self.addNode(ex, ey, false);
-        } else if (tool === 'add_pin') {
-          self.addNode(ex, ey, true);
-        } else if (tool === 'add_gear') {
-          var cId = self.addNode(ex, ey, true);
-          self.addGear(cId, 45, 15);
+    if (typeof window !== 'undefined') {
+      window.addEventListener('mouseup', function(e) {
+        if (self.isPotentialPan && !self.isPanning && self._pendingEmptyClick) {
+          var tool = self._pendingEmptyClick.tool;
+          var ex = self._pendingEmptyClick.wx;
+          var ey = self._pendingEmptyClick.wy;
+          if (tool === 'add_node') {
+            self.addNode(ex, ey, false);
+          } else if (tool === 'add_pin') {
+            self.addNode(ex, ey, true);
+          } else if (tool === 'add_gear') {
+            var cId = self.addNode(ex, ey, true);
+            self.addGear(cId, 45, 15);
+          }
         }
-      }
-      self.isPotentialPan = false;
+        self.isPotentialPan = false;
 
-      if (self.isConnecting && self.connectStartNode !== -1) {
-        var w = self.screenToWorld(e.clientX, e.clientY);
-        var nearNode = self.findNodeNear(w.x, w.y);
+        if (self.isConnecting && self.connectStartNode !== -1) {
+          var w = self.screenToWorld(e.clientX, e.clientY);
+          var nearNode = self.findNodeNear(w.x, w.y);
 
-        if (nearNode !== -1 && nearNode !== self.connectStartNode) {
-          // Connect to existing node
-          self.addRod(self.connectStartNode, nearNode);
-        } else if (nearNode === -1) {
-          // Drop new node in empty space and connect
-          var endNode = self.addNode(w.x, w.y, false);
-          self.addRod(self.connectStartNode, endNode);
+          if (nearNode !== -1 && nearNode !== self.connectStartNode) {
+            // Connect to existing node
+            self.addRod(self.connectStartNode, nearNode);
+          } else if (nearNode === -1) {
+            // Drop new node in empty space and connect
+            var endNode = self.addNode(w.x, w.y, false);
+            self.addRod(self.connectStartNode, endNode);
+          }
         }
-      }
 
-      self.isDragging = false;
-      self.isConnecting = false;
-      self.connectStartNode = -1;
-      self.isPanning = false;
-      self.isTurningGear = false;
-      self.turningGearIdx = -1;
-      self._pendingEmptyClick = null;
+        if (self.isConnectingSpring && self.connectStartNode !== -1) {
+          var w = self.screenToWorld(e.clientX, e.clientY);
+          var nearNode = self.findNodeNear(w.x, w.y);
 
-      if (self.onDirectDragRelease) {
-        self.onDirectDragRelease();
-      }
+          if (nearNode !== -1 && nearNode !== self.connectStartNode) {
+            self.addSpring(self.connectStartNode, nearNode);
+          } else if (nearNode === -1) {
+            var endNode = self.addNode(w.x, w.y, false);
+            self.addSpring(self.connectStartNode, endNode);
+          }
+        }
 
-      self.render();
-    });
+        self.isDragging = false;
+        self.isConnecting = false;
+        self.isConnectingSpring = false;
+        self.connectStartNode = -1;
+        self.isPanning = false;
+        self.isTurningGear = false;
+        self.turningGearIdx = -1;
+        self._pendingEmptyClick = null;
+
+        if (self.onDirectDragRelease) {
+          self.onDirectDragRelease();
+        }
+
+        self.render();
+      });
+    }
 
     // Touch Event Handling (Universal Pinch-to-Zoom, Two-Finger Pan, and Touch Long-Press)
     var touchStartDist = 0;
@@ -815,14 +1079,18 @@
         var t = e.touches[0];
         longPressTimer = setTimeout(function() {
           var w = self.screenToWorld(t.clientX, t.clientY);
-          var nearNode = self.findNodeNear(w.x, w.y);
-          var nearGear = self.findGearNear(w.x, w.y);
-          var nearRod = self.findRodNear(w.x, w.y);
+          var elem = self.findElementNear(w.x, w.y);
           var type = 'empty', data = { x: w.x, y: w.y };
-          if (nearNode !== -1) { type = 'node'; data = self.getNodeById(nearNode); }
-          else if (nearGear !== -1) { type = 'gear'; data = { index: nearGear, gear: self.gears[nearGear] }; }
-          else if (nearRod !== -1) { type = 'rod'; data = { index: nearRod, rod: self.rods[nearRod] }; }
-          if (self.onShowContextMenu) self.onShowContextMenu(t.clientX, t.clientY, type, data);
+          if (elem) {
+            self.selection = elem;
+            type = elem.type;
+            data = elem.item;
+            if (elem.type === 'node') self.selectedNodeId = elem.index;
+          } else {
+            self.selection = null;
+          }
+          if (self.onShowContextMenu) self.onShowContextMenu(t.clientX, t.clientY, type, elem || data);
+          self.render();
         }, 500);
 
         var me = new MouseEvent('mousedown', { clientX: t.clientX, clientY: t.clientY, button: 0 });
@@ -1088,6 +1356,19 @@
       }
     }
 
+    // 4.5 Draw Helical Springs
+    var springs = (simPhysics && this.mode === 'simulate') ? simPhysics.springs : this.springs;
+    if (springs) {
+      for (var sp = 0; sp < springs.length; sp++) {
+        var spr = springs[sp];
+        var spa = nodePositions[spr.a];
+        var spb = nodePositions[spr.b];
+        if (spa && spb) {
+          this.renderer.drawSpring(ctx, spa.x, spa.y, spb.x, spb.y, spr.width || 14, spr.color || '#10b981');
+        }
+      }
+    }
+
     // 5. Draw Motors
     var motors = (simPhysics && this.mode === 'simulate') ? simPhysics.motors : this.motors;
     for (var m = 0; m < motors.length; m++) {
@@ -1107,7 +1388,11 @@
       var isFixed = (simPhysics && this.mode === 'simulate') ? simPhysics.isFixed[n.id] : n.fixed;
 
       if (isFixed) {
-        this.renderer.drawGroundAnchor(ctx, pos.x, pos.y, 16);
+        if (n.simplified) {
+          this.renderer.drawSimplifiedPin(ctx, pos.x, pos.y, 7);
+        } else {
+          this.renderer.drawGroundAnchor(ctx, pos.x, pos.y, 16);
+        }
       } else {
         ctx.beginPath();
         ctx.arc(pos.x, pos.y, 7, 0, Math.PI * 2);
@@ -1168,6 +1453,135 @@
         ctx.fillStyle = 'rgba(34, 197, 94, 0.4)';
         ctx.fill();
       }
+    }
+
+    // 8.1 Ghost spring line when dragging to connect spring
+    if (this.isConnectingSpring && this.connectStartNode !== -1) {
+      var pStartS = nodePositions[this.connectStartNode];
+      if (pStartS) {
+        this.renderer.drawSpring(ctx, pStartS.x, pStartS.y, this.mouseWorldX, this.mouseWorldY, 14, '#10b981');
+        ctx.beginPath();
+        ctx.arc(this.mouseWorldX, this.mouseWorldY, 7, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(16, 185, 129, 0.4)';
+        ctx.fill();
+      }
+    }
+
+    // 8.5 Selection outline / halo
+    if (this.selection) {
+      ctx.save();
+      var sel = this.selection;
+      if (sel.type === 'node') {
+        var sn = nodePositions[sel.id !== undefined ? sel.id : sel.index];
+        if (sn) {
+          ctx.beginPath();
+          ctx.arc(sn.x, sn.y, 14, 0, Math.PI * 2);
+          ctx.strokeStyle = '#38bdf8';
+          ctx.lineWidth = 2.5;
+          ctx.setLineDash([4, 3]);
+          ctx.stroke();
+        }
+      } else if (sel.type === 'gear') {
+        var sg = this.gears[sel.index];
+        if (sg) {
+          var sp = nodePositions[sg.centerNode];
+          if (sp) {
+            ctx.beginPath();
+            ctx.arc(sp.x, sp.y, sg.radius + 8, 0, Math.PI * 2);
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = 2.5;
+            ctx.setLineDash([5, 4]);
+            ctx.stroke();
+          }
+        }
+      } else if (sel.type === 'pulley') {
+        var spu = this.pulleys[sel.index];
+        if (spu) {
+          var spup = nodePositions[spu.nodeId];
+          if (spup) {
+            ctx.beginPath();
+            ctx.arc(spup.x, spup.y, spu.radius + 7, 0, Math.PI * 2);
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = 2.5;
+            ctx.setLineDash([5, 4]);
+            ctx.stroke();
+          }
+        }
+      } else if (sel.type === 'cam') {
+        var sc = this.cams[sel.index];
+        if (sc) {
+          var scp = nodePositions[sc.centerNode];
+          if (scp) {
+            ctx.beginPath();
+            ctx.arc(scp.x, scp.y, (sc.baseRadius + (sc.lift || 0)) + 8, 0, Math.PI * 2);
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = 2.5;
+            ctx.setLineDash([5, 4]);
+            ctx.stroke();
+          }
+        }
+      } else if (sel.type === 'rod') {
+        var sr = this.rods[sel.index];
+        if (sr) {
+          var sra = nodePositions[sr.a];
+          var srb = nodePositions[sr.b];
+          if (sra && srb) {
+            ctx.beginPath();
+            ctx.moveTo(sra.x, sra.y);
+            ctx.lineTo(srb.x, srb.y);
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = (sr.width || 12) + 8;
+            ctx.lineCap = 'round';
+            ctx.globalAlpha = 0.4;
+            ctx.stroke();
+            ctx.globalAlpha = 1.0;
+          }
+        }
+      } else if (sel.type === 'spring') {
+        var ss = this.springs[sel.index];
+        if (ss) {
+          var ssa = nodePositions[ss.a];
+          var ssb = nodePositions[ss.b];
+          if (ssa && ssb) {
+            ctx.beginPath();
+            ctx.moveTo(ssa.x, ssa.y);
+            ctx.lineTo(ssb.x, ssb.y);
+            ctx.strokeStyle = '#10b981';
+            ctx.lineWidth = (ss.width || 14) + 8;
+            ctx.lineCap = 'round';
+            ctx.globalAlpha = 0.4;
+            ctx.stroke();
+            ctx.globalAlpha = 1.0;
+          }
+        }
+      } else if (sel.type === 'slider') {
+        var ssl = this.sliders[sel.index];
+        if (ssl) {
+          var ssnode = nodePositions[ssl.node];
+          if (ssnode) {
+            ctx.beginPath();
+            ctx.arc(ssnode.x, ssnode.y, 16, 0, Math.PI * 2);
+            ctx.strokeStyle = '#f59e0b';
+            ctx.lineWidth = 2.5;
+            ctx.setLineDash([4, 3]);
+            ctx.stroke();
+          }
+        }
+      } else if (sel.type === 'geneva') {
+        var sgen = this.genevas[sel.index];
+        if (sgen) {
+          var sgc = nodePositions[sgen.genevaCenterNode];
+          if (sgc) {
+            ctx.beginPath();
+            ctx.arc(sgc.x, sgc.y, sgen.radius + 8, 0, Math.PI * 2);
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = 2.5;
+            ctx.setLineDash([5, 4]);
+            ctx.stroke();
+          }
+        }
+      }
+      ctx.restore();
     }
 
     ctx.restore();
@@ -1401,8 +1815,10 @@
         { id: 7, x: 120, y: 140, fixed: true, mass: 1 }   // Valve spring base
       ],
       rods: [
-        { a: 1, b: 4, length: 74, width: 10, color: '#3b82f6' },
-        { a: 6, b: 7, length: 60, width: 8, color: '#10b981', material: 'spring' } // Return spring
+        { a: 1, b: 4, length: 74, width: 10, color: '#3b82f6' }
+      ],
+      springs: [
+        { a: 6, b: 7, restLength: 60, stiffness: 300, damping: 2.0, width: 14, color: '#10b981' }
       ],
       sliders: [
         { node: 1, aNode: 2, bNode: 3, minT: 35, maxT: 85 }

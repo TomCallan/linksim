@@ -58,6 +58,7 @@
     this.camContacts = [];   // { camIdx, followerNode, rollerRadius, compliance, normalForce }
     this.attachedPulleyNodes = []; // { nodeId, pulleyIdx, radius, angleOffset }
     this.attachedCamNodes = [];    // { nodeId, camIdx, radius, angleOffset }
+    this.springs = [];             // { a, b, restLength, stiffness, damping, width, color, force }
 
     // Direct user interaction
     this.mouseDragNode = -1;
@@ -106,6 +107,7 @@
     this.camContacts = [];
     this.attachedPulleyNodes = [];
     this.attachedCamNodes = [];
+    this.springs = [];
     this.mouseDragNode = -1;
     this.time = 0;
   };
@@ -255,6 +257,26 @@
     };
     this.camContacts.push(contact);
     return contact;
+  };
+
+  PhysicsSystem.prototype.addSpring = function(a, b, restLength, stiffness, options) {
+    options = options || {};
+    if (restLength === undefined || restLength <= 0) {
+      restLength = Math2D.dist(this.x[a], this.y[a], this.x[b], this.y[b]);
+    }
+    var spring = {
+      a: a,
+      b: b,
+      restLength: restLength,
+      stiffness: stiffness !== undefined ? stiffness : 150.0,
+      damping: options.damping !== undefined ? options.damping : 0.05,
+      width: options.width || 14,
+      color: options.color || '#10b981',
+      currentLength: restLength,
+      force: 0
+    };
+    this.springs.push(spring);
+    return spring;
   };
 
   PhysicsSystem.prototype.attachNodeToPulley = function(nodeId, pulleyIdx, radius, angleOffset) {
@@ -753,6 +775,39 @@
             this.vx[sNode] *= Math.max(0, 1.0 - sliderObj.friction * h * 10);
             this.vy[sNode] *= Math.max(0, 1.0 - sliderObj.friction * h * 10);
           }
+        }
+
+        // Helical Springs (XPBD Elastic Potential)
+        for (var sp = 0; sp < this.springs.length; sp++) {
+          var spr = this.springs[sp];
+          var sa = spr.a, sb = spr.b;
+          var wSa = this.invMass[sa];
+          var wSb = this.invMass[sb];
+          var wSumS = wSa + wSb;
+          if (wSumS === 0) continue;
+
+          var sdx = this.x[sb] - this.x[sa];
+          var sdy = this.y[sb] - this.y[sa];
+          var sDist = Math.hypot(sdx, sdy);
+          if (sDist === 0) continue;
+
+          spr.currentLength = sDist;
+          var sDeltaC = sDist - spr.restLength;
+          // XPBD compliance alpha = 1 / stiffness
+          var springCompliance = 1.0 / Math.max(1e-3, spr.stiffness);
+          var sFactor = sDeltaC / (sDist * (wSumS + springCompliance / hSq));
+          var sCorrX = sdx * sFactor;
+          var sCorrY = sdy * sFactor;
+
+          if (wSa > 0) {
+            this.x[sa] += wSa * sCorrX;
+            this.y[sa] += wSa * sCorrY;
+          }
+          if (wSb > 0) {
+            this.x[sb] -= wSb * sCorrX;
+            this.y[sb] -= wSb * sCorrY;
+          }
+          spr.force = Math.abs(sDeltaC) * spr.stiffness;
         }
 
         // Physical Cam-Follower Contact Non-Penetration Constraint

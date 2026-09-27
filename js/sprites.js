@@ -99,6 +99,90 @@
   };
 
   /**
+   * Render simplified ground pin (minimalist sleek pivot point with concentric ring).
+   */
+  SpriteRenderer.prototype.drawSimplifiedPin = function(ctx, x, y, size) {
+    size = size || 7;
+    ctx.save();
+    // Concentric anchor ring
+    ctx.beginPath();
+    ctx.arc(x, y, size + 4, 0, Math.PI * 2);
+    ctx.strokeStyle = '#475569';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Pivot center dot
+    ctx.beginPath();
+    ctx.arc(x, y, size, 0, Math.PI * 2);
+    ctx.fillStyle = '#0f172a';
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#ffffff';
+    ctx.stroke();
+
+    // Core pin hole
+    ctx.beginPath();
+    ctx.arc(x, y, 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#38bdf8';
+    ctx.fill();
+
+    ctx.restore();
+  };
+
+  /**
+   * Render authentic helical coil spring with dynamic extension/compression waveform.
+   */
+  SpriteRenderer.prototype.drawSpring = function(ctx, x1, y1, x2, y2, width, color) {
+    width = width || 14;
+    color = color || '#10b981';
+    var dx = x2 - x1;
+    var dy = y2 - y1;
+    var len = Math.hypot(dx, dy);
+    if (len < 1e-6) return;
+
+    var angle = Math.atan2(dy, dx);
+    ctx.save();
+    ctx.translate(x1, y1);
+    ctx.rotate(angle);
+
+    var endLeader = 12;
+    var coilSpan = Math.max(10, len - endLeader * 2);
+    var numCoils = 8;
+    var dCoil = coilSpan / numCoils;
+    var halfW = width * 0.5;
+
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(endLeader, 0);
+
+    for (var i = 0; i < numCoils; i++) {
+      var xBase = endLeader + i * dCoil;
+      ctx.lineTo(xBase + dCoil * 0.25, -halfW);
+      ctx.lineTo(xBase + dCoil * 0.75, halfW);
+    }
+    ctx.lineTo(endLeader + coilSpan, 0);
+    ctx.lineTo(len, 0);
+
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = color;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+
+    // End mounting loops
+    ctx.beginPath();
+    ctx.arc(0, 0, 4, 0, Math.PI * 2);
+    ctx.arc(len, 0, 4, 0, Math.PI * 2);
+    ctx.fillStyle = '#f8fafc';
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#0f172a';
+    ctx.stroke();
+
+    ctx.restore();
+  };
+
+  /**
    * Render dynamic capsule linkage with bushings and optional stress tint.
    */
   SpriteRenderer.prototype.drawCapsuleLink = function(ctx, x1, y1, x2, y2, width, stress, customColor) {

@@ -236,4 +236,88 @@ console.log('Running Linksim Programmatic API & Materials Test Suite...');
   console.log('PASS: Declarative Cams, Belts, Pulleys, and Axles building and telemetry via LinksimAPI');
 }
 
+// Test 9: Declarative Springs in LinksimAPI
+{
+  const sim = new PhysicsSystem();
+  const tl = new Timeline(sim);
+  const api = LinksimAPI.init(null, sim, tl, null);
+
+  api.build({
+    nodes: [
+      { x: 0, y: 0, fixed: true },
+      { x: 0, y: 100, fixed: false }
+    ],
+    springs: [
+      { a: 0, b: 1, restLength: 70, stiffness: 250, damping: 2.0 }
+    ]
+  });
+
+  const state = api.getState();
+  assert.strictEqual(state.springs.length, 1);
+  assert.strictEqual(state.springs[0].restLength, 70);
+  assert.strictEqual(state.springs[0].stiffness, 250);
+
+  api.step(1 / 60);
+  const after = api.getState();
+  assert(after.springs[0].force > 0);
+  console.log('PASS: Declarative Springs in LinksimAPI build() and getState()');
+}
+
+// Test 10: Pin Simplification and Universal Selection in MechanismEditor
+{
+  const MechanismEditor = require('../js/editor.js');
+  const dummyCtx = new Proxy({}, {
+    get: (target, prop) => {
+      if (prop === 'measureText') return () => ({ width: 10 });
+      return () => {};
+    },
+    set: () => true
+  });
+  const dummyCanvas = {
+    getContext: () => dummyCtx,
+    addEventListener: () => {},
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }),
+    width: 800,
+    height: 600
+  };
+
+  const editor = new MechanismEditor(dummyCanvas);
+
+  // Add ground pin and free joint
+  const n0 = editor.addNode(0, 0, true);
+  const n1 = editor.addNode(0, 100, false);
+  const pinNode = editor.getNodeById(n0);
+
+  // Pin simplification toggle
+  assert.strictEqual(!!pinNode.simplified, false);
+  pinNode.simplified = true;
+  assert.strictEqual(pinNode.simplified, true);
+
+  // Add elements: gear, pulley, cam
+  editor.addGear(n0, 40, 16);
+  editor.addPulley(n0, 30);
+  editor.addCam(n0, 'pear', 35, 20);
+
+  // Add spring between separate nodes
+  const n2 = editor.addNode(200, 0, true);
+  const n3 = editor.addNode(200, 100, false);
+  editor.addSpring(n2, n3, { restLength: 100, stiffness: 150 });
+
+  // Test findElementNear
+  const selNode = editor.findElementNear(0, 0);
+  assert.strictEqual(selNode.type, 'node');
+  assert.strictEqual(selNode.id, n0);
+
+  const selSpring = editor.findElementNear(200, 50);
+  assert(selSpring !== null, 'Spring was not found near line');
+  assert.strictEqual(selSpring.type, 'spring');
+
+  // Test universal deletion
+  editor.selection = { type: 'spring', index: 0 };
+  editor.deleteSelection();
+  assert.strictEqual(editor.springs.length, 0, 'Spring was not deleted via deleteSelection');
+
+  console.log('PASS: Pin Simplification toggle and Universal Element Selection/Deletion');
+}
+
 console.log('All API & Material tests passed successfully!');

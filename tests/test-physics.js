@@ -342,4 +342,37 @@ console.log('Running Linksim Physics & Timeline Test Suite...');
   console.log('PASS: Axles & Compound Power Transmission (Pulley -> Belt -> Axle -> Gear train)');
 }
 
+// Test 14: Helical Spring XPBD Elastic Restoring Force & Dynamic Oscillation
+{
+  const sim = new PhysicsSystem();
+  const n0 = sim.addNode(0, 0, true);
+  const n1 = sim.addNode(0, 100, false, 1.0); // 1kg mass
+  // Rest length 80, stiffness 200 => stretched by 20px initially
+  const spring = sim.addSpring(n0, n1, 80, 200, { damping: 0.1 });
+
+  // In zero gravity, spring must pull node 1 towards rest length (y=80)
+  for (let s = 0; s < 30; s++) {
+    sim.step(1 / 60);
+  }
+  assert(sim.y[n1] < 100, `Spring did not pull mass towards rest length: y is ${sim.y[n1]}`);
+  assert(spring.force > 0, `Spring force was not computed: force is ${spring.force}`);
+  console.log('PASS: Helical Spring XPBD Elastic Restoring Force & Dynamic Oscillation');
+}
+
+// Test 15: Custom Vector Polygon Cam Profile & Follower XPBD Push
+{
+  const sim = new PhysicsSystem();
+  const nCam = sim.addNode(0, 0, true);
+  const nFollower = sim.addNode(0, 40, false, 1.0); // Follower at y=40
+
+  // Create custom polygon triangle cam: vertex at [0, 60], bottom at [-30, -20], [30, -20]
+  const customPoints = [[-30, -20], [0, 60], [30, -20]];
+  sim.addCam(nCam, 'custom', 30, 30, { points: customPoints });
+  sim.addCamContact(0, nFollower, 6);
+
+  sim.step(1 / 60);
+  assert(sim.y[nFollower] >= 45, `Custom cam follower was not pushed: y is ${sim.y[nFollower]}`);
+  console.log('PASS: Custom Vector Polygon Cam Profile & Follower XPBD Push');
+}
+
 console.log('All tests passed successfully!');
