@@ -34,7 +34,12 @@
           if (spec.rods) {
             for (var r = 0; r < spec.rods.length; r++) {
               var rod = spec.rods[r];
-              physics.addRod(rod.a, rod.b, rod.length, { width: rod.width, color: rod.color }, rod.material);
+              physics.addRod(rod.a, rod.b, rod.length, {
+                width: rod.width,
+                color: rod.color,
+                angleLock: rod.angleLock,
+                lockedAngle: rod.lockedAngle
+              }, rod.material);
             }
           }
           if (spec.brackets) {
@@ -436,6 +441,33 @@
       releaseDrag: function() {
         if (physics) physics.clearMouseDrag();
         if (timeline) timeline.onHumanInputEnd();
+      },
+
+      setHidePins: function(hide) {
+        var r = renderer || (editor && editor.renderer);
+        if (r) r.hidePins = !!hide;
+        if (editor) editor.render(physics);
+      },
+
+      getHidePins: function() {
+        var r = renderer || (editor && editor.renderer);
+        return r ? !!r.hidePins : false;
+      },
+
+      lockRodAngle: function(rodIdx, orientation, angleDeg) {
+        var r = null;
+        if (editor && editor.rods[rodIdx]) {
+          r = editor.rods[rodIdx];
+        } else if (physics && physics.rods[rodIdx]) {
+          r = physics.rods[rodIdx];
+        }
+        if (r) {
+          r.angleLock = orientation || 'none';
+          if (angleDeg !== undefined) {
+            r.lockedAngle = angleDeg * Math.PI / 180;
+          }
+          if (editor) editor._notifyChange();
+        }
       }
     };
 

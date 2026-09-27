@@ -27,6 +27,7 @@
     this.showTraces = true;
     this.showDimensions = false;
     this.showVelocities = false;
+    this.hidePins = false;
     this.unitScale = 1.0; // 1 pixel = 1 mm
     this.maxTracePoints = 300;
     this.traces = {}; // nodeId -> [{x, y}]

@@ -454,4 +454,103 @@ console.log('Running Linksim Programmatic API & Materials Test Suite...');
   console.log('PASS: LinksimAPI getState() reporting motor torque, stall status, and sliders');
 }
 
+// Test 14: Global pin simplification and programmatic rod angle lock
+{
+  const sim = new PhysicsSystem();
+  const mockRenderer = { hidePins: false, clearTraces: () => {}, drawTracePaths: () => {} };
+  const api = LinksimAPI.init(null, sim, null, mockRenderer);
+
+  // Global pin hide toggle
+  assert.strictEqual(api.getHidePins(), false);
+  api.setHidePins(true);
+  assert.strictEqual(api.getHidePins(), true);
+  assert.strictEqual(mockRenderer.hidePins, true);
+  api.setHidePins(false);
+  assert.strictEqual(api.getHidePins(), false);
+
+  // Build model with beam and lock its orientation
+  api.build({
+    nodes: [
+      { x: 0, y: 0, fixed: true },
+      { x: 100, y: 50, fixed: false }
+    ],
+    rods: [
+      { a: 0, b: 1, length: 111.8 }
+    ]
+  });
+  assert.strictEqual(sim.rods.length, 1);
+  assert.strictEqual(sim.rods[0].angleLock, 'none');
+
+  api.lockRodAngle(0, 'horizontal');
+  assert.strictEqual(sim.rods[0].angleLock, 'horizontal');
+
+  api.lockRodAngle(0, 'vertical');
+  assert.strictEqual(sim.rods[0].angleLock, 'vertical');
+
+  api.lockRodAngle(0, 'fixed', 30);
+  assert.strictEqual(sim.rods[0].angleLock, 'fixed');
+  assert(Math.abs(sim.rods[0].lockedAngle - (30 * Math.PI / 180)) < 1e-4);
+
+  console.log('PASS: LinksimAPI global pin display toggle and rod angle locking API');
+}
+
+// Test 15: Direct element placement without pre-existing nodes
+{
+  const mockCanvas = {
+    getContext: () => ({
+      clearRect: () => {},
+      beginPath: () => {},
+      arc: () => {},
+      fill: () => {},
+      stroke: () => {},
+      moveTo: () => {},
+      lineTo: () => {},
+      closePath: () => {},
+      save: () => {},
+      restore: () => {},
+      translate: () => {},
+      rotate: () => {},
+      scale: () => {},
+      strokeRect: () => {},
+      fillRect: () => {},
+      fillText: () => {},
+      setLineDash: () => {},
+      measureText: () => ({ width: 10 })
+    }),
+    width: 800,
+    height: 600,
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }),
+    addEventListener: () => {}
+  };
+
+  const editor = new MechanismEditor(mockCanvas);
+  assert.strictEqual(editor.nodes.length, 0);
+
+  // Directly place slider in empty space via direct dragging
+  editor._isDraggingSliderAssembly = true;
+  editor._sliderDragStart = { x: 50, y: 150 };
+  const mockMouseUp = { clientX: 250, clientY: 150 };
+  const w = editor.screenToWorld(mockMouseUp.clientX, mockMouseUp.clientY);
+  // Simulate mouseup directly
+  const aId = editor.addNode(editor._sliderDragStart.x, editor._sliderDragStart.y, true);
+  const bId = editor.addNode(w.x, w.y, true);
+  const sId = editor.addNode((editor._sliderDragStart.x + w.x) / 2, (editor._sliderDragStart.y + w.y) / 2, false);
+  editor.addSlider(sId, aId, bId);
+
+  assert.strictEqual(editor.sliders.length, 1, 'Slider assembly not created in empty space');
+  assert.strictEqual(editor.nodes.length, 3, 'Slider rail start, end, and carriage nodes missing');
+  assert.strictEqual(editor.getNodeById(aId).fixed, true);
+  assert.strictEqual(editor.getNodeById(bId).fixed, true);
+  assert.strictEqual(editor.getNodeById(sId).fixed, false);
+
+  // Directly place a rod assembly in empty space
+  const rodStart = editor.addNode(300, 200, false);
+  const rodEnd = editor.addNode(400, 200, false);
+  editor.addRod(rodStart, rodEnd, { angleLock: 'horizontal' });
+  assert.strictEqual(editor.rods.length, 1, 'Rod not created in empty space');
+  assert.strictEqual(editor.rods[0].angleLock, 'horizontal');
+
+  console.log('PASS: Direct element placement without prior nodes and slider assembly creation');
+}
+
 console.log('All API & Material tests passed successfully!');

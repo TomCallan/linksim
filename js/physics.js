@@ -145,6 +145,9 @@
       length = Math2D.dist(this.x[a], this.y[a], this.x[b], this.y[b]);
     }
     var mat = Materials[materialKey] || Materials.steel;
+    var angleLock = (style && style.angleLock) || 'none';
+    var lockedAngle = (style && style.lockedAngle !== undefined) ? style.lockedAngle :
+                      (angleLock === 'fixed' ? Math.atan2(this.y[b] - this.y[a], this.x[b] - this.x[a]) : 0);
     var rod = {
       a: a,
       b: b,
@@ -153,7 +156,9 @@
       color: (style && style.color) || mat.color || '#3b82f6',
       material: materialKey || 'steel',
       compliance: (style && style.compliance !== undefined) ? style.compliance : mat.compliance,
-      stress: 0
+      stress: 0,
+      angleLock: angleLock,
+      lockedAngle: lockedAngle
     };
     this.rods.push(rod);
     return rod;
@@ -790,6 +795,35 @@
           if (wB > 0) {
             this.x[b] -= wB * corrX;
             this.y[b] -= wB * corrY;
+          }
+
+          // Beam Orientation / Angle Locking Constraint (Horizontal, Vertical, or Fixed Angle)
+          if (rod.angleLock && rod.angleLock !== 'none') {
+            if (rod.angleLock === 'horizontal') {
+              var dyH = this.y[b] - this.y[a];
+              var corrYH = dyH / wSum;
+              if (wA > 0) this.y[a] += wA * corrYH;
+              if (wB > 0) this.y[b] -= wB * corrYH;
+            } else if (rod.angleLock === 'vertical') {
+              var dxV = this.x[b] - this.x[a];
+              var corrXV = dxV / wSum;
+              if (wA > 0) this.x[a] += wA * corrXV;
+              if (wB > 0) this.x[b] -= wB * corrXV;
+            } else if (rod.angleLock === 'fixed') {
+              var theta = rod.lockedAngle || 0;
+              var nx = -Math.sin(theta);
+              var ny = Math.cos(theta);
+              var err = (this.x[b] - this.x[a]) * nx + (this.y[b] - this.y[a]) * ny;
+              var corr = err / wSum;
+              if (wA > 0) {
+                this.x[a] += wA * corr * nx;
+                this.y[a] += wA * corr * ny;
+              }
+              if (wB > 0) {
+                this.x[b] -= wB * corr * nx;
+                this.y[b] -= wB * corr * ny;
+              }
+            }
           }
         }
 

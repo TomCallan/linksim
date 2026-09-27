@@ -21,54 +21,45 @@
       flex-direction: column;
     }
     header {
-      height: 48px;
-      min-height: 48px;
+      height: 42px;
+      min-height: 42px;
       max-width: 100vw;
       width: 100%;
       box-sizing: border-box;
       display: flex;
       align-items: center;
-      padding: 0 10px;
+      padding: 0 8px;
       background: #ffffff;
       border-bottom: 1px solid #e2e8f0;
       z-index: 10;
-      gap: 6px;
-      overflow-x: auto;
-      overflow-y: hidden;
-      scrollbar-width: thin;
+      gap: 5px;
+      overflow: hidden;
       flex-shrink: 0;
-    }
-    header::-webkit-scrollbar {
-      height: 3px;
-    }
-    header::-webkit-scrollbar-thumb {
-      background: #cbd5e1;
-      border-radius: 2px;
     }
     .brand {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 5px;
       flex-shrink: 0;
     }
     h1 {
       margin: 0;
-      font-size: 1.15rem;
+      font-size: 1.05rem;
       font-weight: 700;
       letter-spacing: -0.02em;
     }
     .badge {
       background-color: #e0f2fe;
       color: #0369a1;
-      font-size: 0.72rem;
+      font-size: 0.65rem;
       font-weight: 600;
-      padding: 2px 7px;
+      padding: 1px 5px;
       border-radius: 9999px;
     }
     .mode-toggle {
       display: flex;
       background: #e2e8f0;
-      border-radius: 6px;
+      border-radius: 5px;
       padding: 2px;
       gap: 2px;
       flex-shrink: 0;
@@ -76,9 +67,9 @@
     .mode-btn {
       border: none;
       background: transparent;
-      font-size: 0.78rem;
+      font-size: 0.74rem;
       font-weight: 600;
-      padding: 4px 10px;
+      padding: 3px 8px;
       border-radius: 4px;
       cursor: pointer;
       color: #475569;
@@ -92,25 +83,32 @@
     .toolbar {
       display: flex;
       align-items: center;
-      gap: 3px;
+      gap: 2px;
       flex-shrink: 0;
     }
     .toolbar button {
-      padding: 4px 7px;
-      font-size: 0.75rem;
+      padding: 3px 5px;
+      font-size: 0.72rem;
+      border-radius: 4px;
     }
     .header-right {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 4px;
       margin-left: auto;
       flex-shrink: 0;
     }
+    .header-right button {
+      padding: 3px 6px;
+      font-size: 0.72rem;
+    }
     #presetSelect {
-      max-width: 175px;
+      max-width: 140px;
       text-overflow: ellipsis;
       overflow: hidden;
       white-space: nowrap;
+      font-size: 0.74rem;
+      padding: 3px 4px;
     }
     button, select {
       font-family: inherit;
@@ -246,6 +244,92 @@
       gap: 4px;
       cursor: pointer;
     }
+    /* Radial Context Menu */
+    #radialMenu {
+      display: none;
+      position: fixed;
+      pointer-events: none;
+      z-index: 1500;
+      width: 0;
+      height: 0;
+    }
+    .radial-center {
+      position: absolute;
+      transform: translate(-50%, -50%);
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: #ffffff;
+      border: 2px solid #2563eb;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      pointer-events: auto;
+      cursor: pointer;
+      z-index: 2;
+      user-select: none;
+      transition: transform 0.15s ease, background 0.15s ease;
+    }
+    .radial-center:hover {
+      background: #f1f5f9;
+      transform: translate(-50%, -50%) scale(1.05);
+    }
+    .radial-center .radial-type {
+      font-size: 0.62rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: #1e293b;
+      letter-spacing: -0.01em;
+      line-height: 1.1;
+    }
+    .radial-center .radial-sub {
+      font-size: 0.55rem;
+      color: #64748b;
+      line-height: 1.1;
+    }
+    .radial-item {
+      position: absolute;
+      transform: translate(-50%, -50%);
+      padding: 4px 8px;
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+      font-size: 0.71rem;
+      font-weight: 600;
+      color: #1e293b;
+      white-space: nowrap;
+      pointer-events: auto;
+      cursor: pointer;
+      transition: transform 0.12s ease, background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+      user-select: none;
+      z-index: 3;
+    }
+    .radial-item:hover {
+      background: #2563eb;
+      color: #ffffff;
+      border-color: #1d4ed8;
+      transform: translate(-50%, -50%) scale(1.1);
+      box-shadow: 0 4px 12px rgba(37,99,235,0.3);
+    }
+    .radial-item.danger {
+      color: #dc2626;
+      border-color: #fca5a5;
+      background: #fef2f2;
+    }
+    .radial-item.danger:hover {
+      background: #dc2626;
+      color: #ffffff;
+      border-color: #b91c1c;
+      box-shadow: 0 4px 12px rgba(220,38,38,0.3);
+    }
+    .radial-item.active-opt {
+      border-color: #2563eb;
+      background: #eff6ff;
+      color: #1d4ed8;
+    }
     /* Context Menu */
     #contextMenu {
       display: none;
@@ -330,32 +414,32 @@
     <button data-tool="select" class="active" title="Select & Move (V)">Select</button>
     <button data-tool="add_pin" title="Add ground pivot pin (P)">Pin</button>
     <button data-tool="add_node" title="Add free joint node (J)">Joint</button>
-    <button data-tool="add_rod" title="Drag between nodes to create rigid rod (R)">Rod</button>
-    <button data-tool="add_spring" title="Drag between nodes to create helical spring">Spring</button>
-    <button data-tool="add_slider" title="Place linear rail & piston (S)">Slider</button>
-    <button data-tool="add_lever" title="Add shift / control lever (L)">Lever</button>
-    <button data-tool="add_gear" title="Add toothed gear wheel (G)">Gear</button>
-    <button data-tool="add_pulley" title="Add grooved pulley wheel">Pulley</button>
-    <button data-tool="add_cam" title="Add cam profile (Pear/Eccentric/Snail/Custom)">Cam</button>
-    <button data-tool="add_motor" title="Attach rotational motor (M)">Motor</button>
-    <button data-tool="delete" class="btn-danger" title="Delete element (X)">Delete</button>
+    <button data-tool="add_rod" title="Add Beam (R) - Click or Drag in empty space">Beam</button>
+    <button data-tool="add_spring" title="Add Helical Spring (E) - Click or Drag in empty space">Spring</button>
+    <button data-tool="add_slider" title="Place Slider (S) - Click or Drag in empty space">Slider</button>
+    <button data-tool="add_lever" title="Add Control Lever (L) - Click to place">Lever</button>
+    <button data-tool="add_gear" title="Add Gear Wheel (G)">Gear</button>
+    <button data-tool="add_pulley" title="Add Pulley Wheel">Pulley</button>
+    <button data-tool="add_cam" title="Add Cam Profile">Cam</button>
+    <button data-tool="add_motor" title="Attach Motor (M)">Motor</button>
+    <button data-tool="delete" class="btn-danger" title="Delete element (X)">Del</button>
   </div>
 
   <div class="header-right">
     <button id="btnUndo" title="Undo change (Ctrl+Z)">Undo</button>
     <button id="btnClear" class="btn-danger" title="Clear all">Clear</button>
 
-    <label for="presetSelect" style="font-size:0.8rem; font-weight:500;">Preset:</label>
+    <label for="presetSelect" style="font-size:0.75rem; font-weight:500;">Preset:</label>
     <select id="presetSelect">
-      <option value="klann">Klann Walker Linkage</option>
-      <option value="sliderCrank">Slider-Crank (Piston Engine)</option>
+      <option value="klann">Klann Walker</option>
+      <option value="sliderCrank">Slider-Crank</option>
       <option value="chebyshev">Chebyshev Straight-Line</option>
-      <option value="gearedBellCrank">Geared Piston & Bell-Crank</option>
+      <option value="gearedBellCrank">Geared Bell-Crank</option>
       <option value="gearTrain">Compound Gear Train</option>
-      <option value="geneva">Geneva Mechanism (Intermittent Cam)</option>
-      <option value="camFollower">Overhead Cam & Valve Follower (Physical Camming)</option>
-      <option value="beltDrive">Belt Drive & Compound Axle Reducer</option>
-      <option value="gearbox">Multi-Speed Gearbox & Shifter</option>
+      <option value="geneva">Geneva Mechanism</option>
+      <option value="camFollower">Cam & Valve Follower</option>
+      <option value="beltDrive">Belt Drive & Jackshaft</option>
+      <option value="gearbox">Multi-Speed Gearbox</option>
     </select>
     <div id="fpsMeter" class="fps-badge">60 FPS</div>
   </div>
@@ -364,7 +448,7 @@
 <main class="workspace">
   <canvas id="maincanvas"></canvas>
   <div class="overlay-hints">
-    Left-drag: Move or Drag-to-connect Rods &bull; Drag Empty Space: Pan &bull; Right-click / Long-press: Context Menu &bull; Space: Play/Pause &bull; Wheel: Zoom
+    Left-drag: Move or Drag-to-connect &bull; Drag Empty Space: Pan &bull; Right-click / Long-press: Radial Menu &bull; Space: Play/Pause &bull; Wheel: Zoom
   </div>
 </main>
 
@@ -392,6 +476,7 @@
   </div>
 
   <div class="options-bar">
+    <label title="Simplify all ground pins to sleek points globally (hide anchor stands)"><input type="checkbox" id="toggleHidePins"> Clean Pins</label>
     <label title="Detect periodic cycles and play from frame cache without physics solving"><input type="checkbox" id="toggleLoopCache" checked> Loop Cache</label>
     <label><input type="checkbox" id="toggleGravity"> Gravity</label>
     <label><input type="checkbox" id="toggleStress" checked> Stress</label>
@@ -401,6 +486,7 @@
   </div>
 </div>
 
+<div id="radialMenu"></div>
 <div id="contextMenu"></div>
 
 <!-- Element Property Inspector Modal -->

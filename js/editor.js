@@ -351,14 +351,21 @@
 
     this.saveState();
     var len = Math2D.dist(na.x, na.y, nb.x, nb.y);
-    this.rods.push({
+    var angleLock = (style && style.angleLock) || 'none';
+    var lockedAngle = (style && style.lockedAngle !== undefined) ? style.lockedAngle :
+                      (angleLock === 'fixed' ? Math.atan2(nb.y - na.y, nb.x - na.x) : 0);
+    var rod = {
       a: aId,
       b: bId,
       length: len,
       width: (style && style.width) || 12,
-      color: (style && style.color) || '#3b82f6'
-    });
+      color: (style && style.color) || '#3b82f6',
+      angleLock: angleLock,
+      lockedAngle: lockedAngle
+    };
+    this.rods.push(rod);
     this._notifyChange();
+    return rod;
   };
 
   MechanismEditor.prototype.addSpring = function(aId, bId, options) {
@@ -1002,15 +1009,74 @@
       if (self.activeTool === 'select') {
         self.selection = null;
         self.selectedNodeId = -1;
+        self.isPotentialPan = true;
+        self.panMouseDownX = e.clientX;
+        self.panMouseDownY = e.clientY;
+        self.panStartX = e.clientX - self.panX;
+        self.panStartY = e.clientY - self.panY;
+        self.render();
+        return;
       }
 
-      // Enable Universal Drag-to-Pan: if mouse moves, it pans; if stationary click, it performs the tool!
-      self.isPotentialPan = true;
-      self.panMouseDownX = e.clientX;
-      self.panMouseDownY = e.clientY;
-      self.panStartX = e.clientX - self.panX;
-      self.panStartY = e.clientY - self.panY;
-      self._pendingEmptyClick = { tool: self.activeTool, wx: w.x, wy: w.y };
+      if (self.activeTool === 'add_node') {
+        self.addNode(w.x, w.y, false);
+        self.render();
+        return;
+      }
+      if (self.activeTool === 'add_pin') {
+        self.addNode(w.x, w.y, true);
+        self.render();
+        return;
+      }
+      if (self.activeTool === 'add_rod') {
+        var startNode = self.addNode(w.x, w.y, false);
+        self.connectStartNode = startNode;
+        self.isConnecting = true;
+        self._startedInEmptySpace = true;
+        self._emptySpaceStartCoord = { x: w.x, y: w.y };
+        self.render();
+        return;
+      }
+      if (self.activeTool === 'add_spring') {
+        var startNode = self.addNode(w.x, w.y, false);
+        self.connectStartNode = startNode;
+        self.isConnectingSpring = true;
+        self._startedInEmptySpace = true;
+        self._emptySpaceStartCoord = { x: w.x, y: w.y };
+        self.render();
+        return;
+      }
+      if (self.activeTool === 'add_slider') {
+        self._isDraggingSliderAssembly = true;
+        self._sliderDragStart = { x: w.x, y: w.y };
+        self.render();
+        return;
+      }
+      if (self.activeTool === 'add_lever') {
+        self.addLever(w.x, w.y);
+        self.setTool('select');
+        self.render();
+        return;
+      }
+      if (self.activeTool === 'add_gear') {
+        var cId = self.addNode(w.x, w.y, true);
+        self.addGear(cId, 45, 15);
+        self.render();
+        return;
+      }
+      if (self.activeTool === 'add_pulley') {
+        var cId = self.addNode(w.x, w.y, true);
+        self.addPulley(cId, 35);
+        self.render();
+        return;
+      }
+      if (self.activeTool === 'add_cam') {
+        var cId = self.addNode(w.x, w.y, true);
+        self.addCam(cId, 'pear', 35, 25);
+        self.render();
+        return;
+      }
+
       self.render();
     });
 
@@ -1055,21 +1121,65 @@
       self.hoverNodeId = self.findNodeNear(w.x, w.y);
       self.hoverGearIdx = self.findGearNear(w.x, w.y);
 
+      // Handle hover cursor styling for levers & sliders in simulate mode
+      if (self.mode === 'simulate') {
+        if (self.isDragging) {
+          canvas.style.cursor = 'grabbing';
+        } else if (self.hoverNodeId !== -1) {
+          var hNode = self.getNodeById(self.hoverNodeId);
+          canvas.style.cursor = (hNode && hNode.isHandle) ? 'grab' : 'pointer';
+        } else if (self.findSliderNear(w.x, w.y) !== -1 || self.hoverGearIdx !== -1) {
+          canvas.style.cursor = 'grab';
+        } else {
+          canvas.style.cursor = 'crosshair';
+        }
+      } else {
+        canvas.style.cursor = 'crosshair';
+      }
+
       // Dragging a node in Edit Mode
       if (self.isDragging && self.selectedNodeId !== -1 && self.mode === 'edit') {
         var node = self.getNodeById(self.selectedNodeId);
         if (node) {
-          node.x = Math.round(w.x);
-          node.y = Math.round(w.y);
+          // If this node is a carriage on a slider, constrain dragging along the rail line
+          var slObj = null;
+          for (var si = 0; si < self.sliders.length; si++) {
+            if (self.sliders[si].node === node.id) { slObj = self.sliders[si]; break; }
+          }
+          if (slObj) {
+            var na = self.getNodeById(slObj.aNode);
+            var nb = self.getNodeById(slObj.bNode);
+            if (na && nb) {
+              var abx = nb.x - na.x;
+              var aby = nb.y - na.y;
+              var lenSq = abx * abx + aby * aby;
+              if (lenSq > 1e-6) {
+                var u = ((w.x - na.x) * abx + (w.y - na.y) * aby) / lenSq;
+                if (slObj.minT !== undefined && isFinite(slObj.minT)) u = Math.max(slObj.minT / Math.sqrt(lenSq), u);
+                if (slObj.maxT !== undefined && isFinite(slObj.maxT)) u = Math.min(slObj.maxT / Math.sqrt(lenSq), u);
+                node.x = Math.round(na.x + u * abx);
+                node.y = Math.round(na.y + u * aby);
+              } else {
+                node.x = Math.round(w.x);
+                node.y = Math.round(w.y);
+              }
+            } else {
+              node.x = Math.round(w.x);
+              node.y = Math.round(w.y);
+            }
+          } else {
+            node.x = Math.round(w.x);
+            node.y = Math.round(w.y);
+          }
 
           // Update lengths of connected rods
           for (var i = 0; i < self.rods.length; i++) {
             var r = self.rods[i];
             if (r.a === node.id || r.b === node.id) {
-              var na = self.getNodeById(r.a);
-              var nb = self.getNodeById(r.b);
-              if (na && nb) {
-                r.length = Math2D.dist(na.x, na.y, nb.x, nb.y);
+              var rNa = self.getNodeById(r.a);
+              var rNb = self.getNodeById(r.b);
+              if (rNa && rNb) {
+                r.length = Math2D.dist(rNa.x, rNa.y, rNb.x, rNb.y);
               }
             }
           }
@@ -1089,23 +1199,28 @@
 
     if (typeof window !== 'undefined') {
       window.addEventListener('mouseup', function(e) {
-        if (self.isPotentialPan && !self.isPanning && self._pendingEmptyClick) {
-          var tool = self._pendingEmptyClick.tool;
-          var ex = self._pendingEmptyClick.wx;
-          var ey = self._pendingEmptyClick.wy;
-          if (tool === 'add_node') {
-            self.addNode(ex, ey, false);
-          } else if (tool === 'add_pin') {
-            self.addNode(ex, ey, true);
-          } else if (tool === 'add_gear') {
-            var cId = self.addNode(ex, ey, true);
-            self.addGear(cId, 45, 15);
-          } else if (tool === 'add_lever') {
-            self.addLever(ex, ey);
-            self.setTool('select');
-          }
-        }
         self.isPotentialPan = false;
+
+        if (self._isDraggingSliderAssembly && self._sliderDragStart) {
+          var w = self.screenToWorld(e.clientX, e.clientY);
+          var sDist = Math2D.dist(self._sliderDragStart.x, self._sliderDragStart.y, w.x, w.y);
+          if (sDist > 20) {
+            var aId = self.addNode(self._sliderDragStart.x, self._sliderDragStart.y, true);
+            var bId = self.addNode(w.x, w.y, true);
+            var sId = self.addNode((self._sliderDragStart.x + w.x) / 2, (self._sliderDragStart.y + w.y) / 2, false);
+            self.addSlider(sId, aId, bId);
+          } else {
+            // Single click in empty space: create horizontal slider assembly
+            var cx = self._sliderDragStart.x;
+            var cy = self._sliderDragStart.y;
+            var aId = self.addNode(cx - 70, cy, true);
+            var bId = self.addNode(cx + 70, cy, true);
+            var sId = self.addNode(cx, cy, false);
+            self.addSlider(sId, aId, bId);
+          }
+          self._isDraggingSliderAssembly = false;
+          self._sliderDragStart = null;
+        }
 
         if (self.isConnecting && self.connectStartNode !== -1) {
           var w = self.screenToWorld(e.clientX, e.clientY);
@@ -1115,9 +1230,16 @@
             // Connect to existing node
             self.addRod(self.connectStartNode, nearNode);
           } else if (nearNode === -1) {
-            // Drop new node in empty space and connect
-            var endNode = self.addNode(w.x, w.y, false);
-            self.addRod(self.connectStartNode, endNode);
+            var startN = self.getNodeById(self.connectStartNode);
+            var distToStart = startN ? Math2D.dist(startN.x, startN.y, w.x, w.y) : 0;
+            if (distToStart > 15) {
+              var endNode = self.addNode(w.x, w.y, false);
+              self.addRod(self.connectStartNode, endNode);
+            } else if (self._startedInEmptySpace && startN) {
+              // Single click in empty space creates horizontal 80px beam
+              var endNode = self.addNode(startN.x + 80, startN.y, false);
+              self.addRod(self.connectStartNode, endNode);
+            }
           }
         }
 
@@ -1128,8 +1250,15 @@
           if (nearNode !== -1 && nearNode !== self.connectStartNode) {
             self.addSpring(self.connectStartNode, nearNode);
           } else if (nearNode === -1) {
-            var endNode = self.addNode(w.x, w.y, false);
-            self.addSpring(self.connectStartNode, endNode);
+            var startN = self.getNodeById(self.connectStartNode);
+            var distToStart = startN ? Math2D.dist(startN.x, startN.y, w.x, w.y) : 0;
+            if (distToStart > 15) {
+              var endNode = self.addNode(w.x, w.y, false);
+              self.addSpring(self.connectStartNode, endNode);
+            } else if (self._startedInEmptySpace && startN) {
+              var endNode = self.addNode(startN.x + 70, startN.y, false);
+              self.addSpring(self.connectStartNode, endNode);
+            }
           }
         }
 
@@ -1137,6 +1266,10 @@
         self.isConnecting = false;
         self.isConnectingSpring = false;
         self.connectStartNode = -1;
+        self._startedInEmptySpace = false;
+        self._emptySpaceStartCoord = null;
+        self._isDraggingSliderAssembly = false;
+        self._sliderDragStart = null;
         self.isPanning = false;
         self.isTurningGear = false;
         self.turningGearIdx = -1;
@@ -1448,6 +1581,23 @@
       if (pa && pb) {
         var stress = (simPhysics && this.mode === 'simulate') ? rod.stress : 0;
         this.renderer.drawCapsuleLink(ctx, pa.x, pa.y, pb.x, pb.y, rod.width, stress, rod.color);
+        if (rod.angleLock && rod.angleLock !== 'none') {
+          var mx = (pa.x + pb.x) / 2;
+          var my = (pa.y + pb.y) / 2;
+          ctx.beginPath();
+          ctx.arc(mx, my, 8, 0, Math.PI * 2);
+          ctx.fillStyle = '#ffffff';
+          ctx.fill();
+          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = '#2563eb';
+          ctx.stroke();
+          ctx.fillStyle = '#1e293b';
+          ctx.font = 'bold 8px monospace';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          var lkText = rod.angleLock === 'horizontal' ? 'H' : (rod.angleLock === 'vertical' ? 'V' : 'A');
+          ctx.fillText(lkText, mx, my);
+        }
         if (this.renderer.showDimensions) {
           this.renderer.drawDimensionLabel(ctx, pa.x, pa.y, pb.x, pb.y, rod.length);
         }
@@ -1486,7 +1636,7 @@
       var isFixed = (simPhysics && this.mode === 'simulate') ? simPhysics.isFixed[n.id] : n.fixed;
 
       if (isFixed) {
-        if (n.simplified) {
+        if (this.renderer.hidePins || n.simplified) {
           this.renderer.drawSimplifiedPin(ctx, pos.x, pos.y, 7);
         } else {
           this.renderer.drawGroundAnchor(ctx, pos.x, pos.y, 16);
@@ -1494,7 +1644,7 @@
       } else {
         var isH = !!n.isHandle;
         ctx.beginPath();
-        ctx.arc(pos.x, pos.y, isH ? 9 : 7, 0, Math.PI * 2);
+        ctx.arc(pos.x, pos.y, isH ? 10 : 7, 0, Math.PI * 2);
         ctx.fillStyle = (n.id === this.selectedNodeId) ? '#f59e0b' : (isH ? '#ec4899' : '#0f172a');
         ctx.fill();
         ctx.lineWidth = 2;
@@ -1502,7 +1652,7 @@
         ctx.stroke();
         if (isH) {
           ctx.beginPath();
-          ctx.arc(pos.x, pos.y, 3.5, 0, Math.PI * 2);
+          ctx.arc(pos.x, pos.y, 4, 0, Math.PI * 2);
           ctx.fillStyle = '#ffffff';
           ctx.fill();
         }
@@ -1570,6 +1720,14 @@
         ctx.fillStyle = 'rgba(16, 185, 129, 0.4)';
         ctx.fill();
       }
+    }
+
+    // 8.2 Ghost slider rail line when dragging to place slider
+    if (this._isDraggingSliderAssembly && this._sliderDragStart) {
+      this.renderer.drawSlider(ctx, this._sliderDragStart.x, this._sliderDragStart.y,
+                               this.mouseWorldX, this.mouseWorldY,
+                               (this._sliderDragStart.x + this.mouseWorldX) / 2,
+                               (this._sliderDragStart.y + this.mouseWorldY) / 2);
     }
 
     // 8.5 Selection outline / halo
@@ -1805,7 +1963,7 @@
         { a: 1, b: 2, length: 130, width: 10, color: '#3b82f6' }
       ],
       sliders: [
-        { node: 2, aNode: 3, bNode: 4, minT: 10, maxT: 170 }
+        { node: 2, aNode: 3, bNode: 4 }
       ],
       gears: [],
       motors: [

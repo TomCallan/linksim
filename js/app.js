@@ -18,13 +18,15 @@
   var fpsDisplayTimer = 0;
   var currentFPS = 60;
 
-  // Context menu element
+  // Context menu elements
   var contextMenuEl;
+  var radialMenuEl;
 
   function init() {
     canvas = document.getElementById('maincanvas');
     ctx = canvas.getContext('2d');
     contextMenuEl = document.getElementById('contextMenu');
+    radialMenuEl = document.getElementById('radialMenu');
 
     physics = new PhysicsSystem();
     timeline = new Timeline(physics);
@@ -45,6 +47,13 @@
     editor.onDirectDragRelease = function() {
       physics.clearMouseDrag();
       timeline.onHumanInputEnd();
+      // Persist dragged positions into editor nodes so slider/mechanism doesn't snap back to 0
+      for (var i = 0; i < editor.nodes.length; i++) {
+        if (i < physics.numNodes && !physics.isFixed[i]) {
+          editor.nodes[i].x = Math.round(physics.x[i]);
+          editor.nodes[i].y = Math.round(physics.y[i]);
+        }
+      }
     };
     editor.onManualRotateGear = function(gearIdx, deltaAngle) {
       physics.rotateGearManual(gearIdx, deltaAngle);
@@ -144,7 +153,12 @@
     // 2. Add rods
     for (var r = 0; r < model.rods.length; r++) {
       var rod = model.rods[r];
-      physics.addRod(rod.a, rod.b, rod.length, { width: rod.width, color: rod.color });
+      physics.addRod(rod.a, rod.b, rod.length, {
+        width: rod.width,
+        color: rod.color,
+        angleLock: rod.angleLock,
+        lockedAngle: rod.lockedAngle
+      });
     }
 
     // 2.5 Add helical springs
@@ -385,6 +399,15 @@
       }
     };
 
+    var hidePinsToggle = document.getElementById('toggleHidePins');
+    if (hidePinsToggle) {
+      hidePinsToggle.addEventListener('change', function(e) {
+        renderer.hidePins = e.target.checked;
+        editor.renderer.hidePins = e.target.checked;
+        editor.render(physics);
+      });
+    }
+
     var stressToggle = document.getElementById('toggleStress');
     if (stressToggle) {
       stressToggle.addEventListener('change', function(e) {
@@ -464,6 +487,8 @@
           editor.deleteNode(editor.selectedNodeId);
           editor.selectedNodeId = -1;
         }
+      } else if (e.key === 'Escape') {
+        hideContextMenu();
       } else if (e.ctrlKey && (e.key === 'z' || e.key === 'Z')) {
         e.preventDefault();
         editor.undo();
@@ -486,37 +511,63 @@
   }
 
   function showContextMenu(clientX, clientY, targetType, targetData) {
-    if (!contextMenuEl) return;
-    contextMenuEl.innerHTML = '';
-    contextMenuEl.style.display = 'block';
+    if (!radialMenuEl) return;
+    radialMenuEl.innerHTML = '';
+    radialMenuEl.style.display = 'block';
 
-    // Position menu safely inside screen bounds
-    var menuW = 220;
-    var menuH = 220;
-    var x = Math.min(clientX, window.innerWidth - menuW - 10);
-    var y = Math.min(clientY, window.innerHeight - menuH - 10);
-    contextMenuEl.style.left = x + 'px';
-    contextMenuEl.style.top = y + 'px';
+    // Position radial menu safely inside screen bounds
+    var rMax = 140;
+    var cx = Math.max(rMax + 10, Math.min(window.innerWidth - rMax - 10, clientX));
+    var cy = Math.max(rMax + 10, Math.min(window.innerHeight - rMax - 10, clientY));
+    radialMenuEl.style.left = cx + 'px';
+    radialMenuEl.style.top = cy + 'px';
 
-    var items = [];
+    var typeName = (targetType || 'MENU').toUpperCase();
+    var subText = 'CLICK';
+
+    var innerItems = [];
+    var outerItems = [];
 
     if (targetType === 'node') {
       var n = targetData.item || targetData;
-      items.push({
-        label: 'Configure Node...',
+      subText = '#' + n.id;
+      innerItems.push({
+        label: 'Props',
         action: function() { openInspector('node', n); }
       });
-      items.push({
-        label: editor.trackedNodes.has(n.id) ? 'Untrack Motion Trail' : 'Track Motion Path Trail',
-        action: function() { editor.toggleTrackNode(n.id); }
-      });
-      items.push({
-        label: n.fixed ? 'Free Joint (Unanchor)' : 'Anchor Ground Pin',
+      innerItems.push({
+        label: n.fixed ? 'Free' : 'Anchor',
         action: function() { editor.toggleFixed(n.id); }
       });
+      innerItems.push({
+        label: 'Beam',
+        action: function() {
+          selectTool('add_rod');
+          editor.connectStartNode = n.id;
+          editor.isConnecting = true;
+        }
+      });
+      innerItems.push({
+        label: 'Spring',
+        action: function() {
+          selectTool('add_spring');
+          editor.connectStartNode = n.id;
+          editor.isConnectingSpring = true;
+        }
+      });
+      innerItems.push({
+        label: editor.trackedNodes.has(n.id) ? 'Untrack' : 'Track',
+        action: function() { editor.toggleTrackNode(n.id); }
+      });
+      innerItems.push({
+        label: 'Delete',
+        danger: true,
+        action: function() { editor.deleteNode(n.id); }
+      });
+
       if (n.fixed) {
-        items.push({
-          label: n.simplified ? 'Show Full Ground Anchor Stand' : 'Simplify Pin to Point (Hide Stand)',
+        outerItems.push({
+          label: n.simplified ? 'Stand' : 'Point',
           action: function() {
             editor.saveState();
             n.simplified = !n.simplified;
@@ -524,178 +575,243 @@
           }
         });
       }
-      items.push({
-        label: 'Connect Rod From Here',
-        action: function() {
-          selectTool('add_rod');
-          editor.connectStartNode = n.id;
-          editor.isConnecting = true;
-        }
+      outerItems.push({
+        label: 'Cam',
+        action: function() { editor.addCam(n.id, 'pear', 35, 25); }
       });
-      items.push({
-        label: 'Connect Helical Spring From Here',
-        action: function() {
-          selectTool('add_spring');
-          editor.connectStartNode = n.id;
-          editor.isConnectingSpring = true;
-        }
+      outerItems.push({
+        label: 'Vector Cam',
+        action: function() { openCustomCamModal(n.id); }
       });
-      // Check if near gear to attach
+      outerItems.push({
+        label: 'Pulley',
+        action: function() { editor.addPulley(n.id, 35); }
+      });
       var nearGear = editor.findGearNear(n.x, n.y);
       if (nearGear !== -1) {
-        items.push({
-          label: 'Lock Node on Gear ' + nearGear,
+        outerItems.push({
+          label: 'Lock Gear',
           action: function() { editor.attachNodeToGear(n.id, nearGear); }
         });
       }
-      var nearPulley = editor.findPulleyNear(n.x, n.y);
-      if (nearPulley !== -1) {
-        items.push({
-          label: 'Lock Node on Pulley ' + nearPulley,
-          action: function() { editor.attachNodeToPulley(n.id, nearPulley); }
-        });
-      }
-      items.push({
-        label: 'Mount Cam Profile Here (Pear Cam)',
-        action: function() { editor.addCam(n.id, 'pear', 35, 25); }
-      });
-      items.push({
-        label: 'Mount Custom Vector Cam Here...',
-        action: function() { openCustomCamModal(n.id); }
-      });
-      items.push({
-        label: 'Mount Pulley Wheel Here',
-        action: function() { editor.addPulley(n.id, 35); }
-      });
       var slIdx = editor.sliders.findIndex(function(s) { return s.node === n.id; });
       if (slIdx !== -1) {
-        items.push({
-          label: 'Configure Slider Rail & Stroke...',
+        outerItems.push({
+          label: 'Slider Rail',
           action: function() { openInspector('slider', { index: slIdx, slider: editor.sliders[slIdx] }); }
         });
       }
       var motIdx = editor.motors.findIndex(function(m) { return m.centerNode === n.id || m.crankNode === n.id; });
       if (motIdx !== -1) {
-        items.push({
-          label: 'Configure Motor (Speed & Torque)...',
+        outerItems.push({
+          label: 'Motor',
           action: function() { openInspector('motor', { index: motIdx, motor: editor.motors[motIdx] }); }
         });
       }
-      items.push({
-        label: 'Delete Node',
-        danger: true,
-        action: function() { editor.deleteNode(n.id); }
-      });
-    } else if (targetType === 'gear') {
-      var gIdx = targetData.index;
-      items.push({
-        label: 'Configure Gear...',
-        action: function() { openInspector('gear', targetData); }
-      });
-      items.push({
-        label: 'Add Crankpin on Gear Edge',
-        action: function() { editor.addCrankpinOnGear(gIdx); }
-      });
-      items.push({
-        label: 'Drive Gear with Motor',
-        action: function() {
-          var g = targetData.gear || targetData.item || editor.gears[gIdx];
-          editor.addMotor(g.centerNode, g.centerNode, 3.0);
-        }
-      });
-      items.push({
-        label: 'Delete Gear',
-        danger: true,
-        action: function() { editor.deleteGear(gIdx); }
-      });
     } else if (targetType === 'rod') {
       var rIdx = targetData.index;
-      items.push({
-        label: 'Configure Material & Properties...',
+      var r = targetData.rod || targetData.item || editor.rods[rIdx];
+      typeName = 'BEAM';
+      subText = '#' + rIdx;
+      innerItems.push({
+        label: 'Props',
         action: function() { openInspector('rod', targetData); }
       });
-      items.push({
-        label: 'Delete Rod',
+      innerItems.push({
+        label: 'Lock Horiz',
+        action: function() {
+          editor.saveState();
+          r.angleLock = 'horizontal';
+          editor._notifyChange();
+        }
+      });
+      innerItems.push({
+        label: 'Lock Vert',
+        action: function() {
+          editor.saveState();
+          r.angleLock = 'vertical';
+          editor._notifyChange();
+        }
+      });
+      innerItems.push({
+        label: 'Lock Angle',
+        action: function() {
+          editor.saveState();
+          r.angleLock = 'fixed';
+          var na = editor.getNodeById(r.a);
+          var nb = editor.getNodeById(r.b);
+          if (na && nb) {
+            r.lockedAngle = Math.atan2(nb.y - na.y, nb.x - na.x);
+          }
+          editor._notifyChange();
+        }
+      });
+      innerItems.push({
+        label: 'Unlock',
+        action: function() {
+          editor.saveState();
+          r.angleLock = 'none';
+          editor._notifyChange();
+        }
+      });
+      innerItems.push({
+        label: 'Delete',
         danger: true,
         action: function() {
           editor.saveState();
           editor.rods.splice(rIdx, 1);
+          editor.selection = null;
           editor._notifyChange();
         }
       });
+    } else if (targetType === 'slider') {
+      var slIdx = targetData.index;
+      var sl = targetData.slider || targetData.item || editor.sliders[slIdx];
+      subText = '#' + slIdx;
+      innerItems.push({
+        label: 'Props',
+        action: function() { openInspector('slider', targetData); }
+      });
+      innerItems.push({
+        label: 'Free Travel',
+        action: function() {
+          editor.saveState();
+          sl.minT = undefined;
+          sl.maxT = undefined;
+          editor._notifyChange();
+        }
+      });
+      innerItems.push({
+        label: (sl.friction && sl.friction > 0) ? 'No Friction' : 'Add Friction',
+        action: function() {
+          editor.saveState();
+          sl.friction = (sl.friction && sl.friction > 0) ? 0 : 0.1;
+          editor._notifyChange();
+        }
+      });
+      innerItems.push({
+        label: 'Delete',
+        danger: true,
+        action: function() { editor.deleteSlider(slIdx); }
+      });
+    } else if (targetType === 'gear') {
+      var gIdx = targetData.index;
+      var g = targetData.gear || targetData.item || editor.gears[gIdx];
+      subText = '#' + gIdx;
+      innerItems.push({
+        label: 'Props',
+        action: function() { openInspector('gear', targetData); }
+      });
+      innerItems.push({
+        label: 'Crankpin',
+        action: function() { editor.addCrankpinOnGear(gIdx); }
+      });
+      innerItems.push({
+        label: 'Drive Motor',
+        action: function() { editor.addMotor(g.centerNode, g.centerNode, 3.0); }
+      });
+      innerItems.push({
+        label: 'Mount Cam',
+        action: function() { editor.addCam(g.centerNode, 'pear', 35, 25); }
+      });
+      innerItems.push({
+        label: 'Delete',
+        danger: true,
+        action: function() { editor.deleteGear(gIdx); }
+      });
     } else if (targetType === 'spring') {
       var spIdx = targetData.index;
-      items.push({
-        label: 'Configure Spring...',
+      var spr = targetData.spring || targetData.item || editor.springs[spIdx];
+      subText = '#' + spIdx;
+      innerItems.push({
+        label: 'Props',
         action: function() { openInspector('spring', targetData); }
       });
-      items.push({
-        label: 'Delete Spring',
+      innerItems.push({
+        label: 'Stiffer',
+        action: function() {
+          editor.saveState();
+          spr.stiffness = Math.round((spr.stiffness || 200) * 1.5);
+          editor._notifyChange();
+        }
+      });
+      innerItems.push({
+        label: 'Softer',
+        action: function() {
+          editor.saveState();
+          spr.stiffness = Math.round((spr.stiffness || 200) * 0.7);
+          editor._notifyChange();
+        }
+      });
+      innerItems.push({
+        label: 'Delete',
         danger: true,
         action: function() { editor.deleteSpring(spIdx); }
       });
     } else if (targetType === 'pulley') {
       var pIdx = targetData.index;
-      items.push({
-        label: 'Configure Pulley...',
+      var pItem = targetData.pulley || targetData.item || editor.pulleys[pIdx];
+      subText = '#' + pIdx;
+      innerItems.push({
+        label: 'Props',
         action: function() { openInspector('pulley', targetData); }
       });
-      items.push({
-        label: 'Delete Pulley',
+      innerItems.push({
+        label: 'Drive Motor',
+        action: function() { editor.addMotor(pItem.nodeId, pItem.nodeId, 3.0); }
+      });
+      innerItems.push({
+        label: 'Delete',
         danger: true,
         action: function() { editor.deletePulley(pIdx); }
       });
     } else if (targetType === 'cam') {
       var cIdx = targetData.index;
       var cItem = targetData.cam || targetData.item || editor.cams[cIdx];
-      items.push({
-        label: 'Configure Cam Profile & Lift...',
+      subText = '#' + cIdx;
+      innerItems.push({
+        label: 'Props',
         action: function() { openInspector('cam', targetData); }
       });
-      items.push({
-        label: 'Edit Custom Cam Geometry...',
+      innerItems.push({
+        label: 'Vector Cam',
         action: function() { openCustomCamModal(cItem.centerNode, cIdx); }
       });
-      items.push({
-        label: 'Delete Cam',
+      innerItems.push({
+        label: 'Drive Motor',
+        action: function() { editor.addMotor(cItem.centerNode, cItem.centerNode, 3.0); }
+      });
+      innerItems.push({
+        label: 'Delete',
         danger: true,
         action: function() { editor.deleteCam(cIdx); }
-      });
-    } else if (targetType === 'slider') {
-      var slIdx = targetData.index;
-      items.push({
-        label: 'Configure Slider Rail...',
-        action: function() { openInspector('slider', targetData); }
-      });
-      items.push({
-        label: 'Delete Slider',
-        danger: true,
-        action: function() { editor.deleteSlider(slIdx); }
       });
     } else if (targetType === 'belt') {
       var bIdx = targetData.index;
       var bItem = targetData.belt || targetData.item || editor.belts[bIdx];
-      items.push({
-        label: bItem && bItem.crossed ? 'Uncross Belt (Direct Drive)' : 'Cross Belt (Reverse Rotation)',
+      subText = '#' + bIdx;
+      innerItems.push({
+        label: bItem && bItem.crossed ? 'Uncross' : 'Cross Belt',
         action: function() {
           editor.saveState();
           if (bItem) bItem.crossed = !bItem.crossed;
           editor._notifyChange();
         }
       });
-      items.push({
-        label: 'Delete Belt',
+      innerItems.push({
+        label: 'Delete',
         danger: true,
         action: function() { editor.deleteBelt(bIdx); }
       });
     } else if (targetType === 'geneva') {
       var genIdx = targetData.index;
-      items.push({
-        label: 'Configure Geneva Mechanism...',
+      subText = '#' + genIdx;
+      innerItems.push({
+        label: 'Props',
         action: function() { openInspector('geneva', targetData); }
       });
-      items.push({
-        label: 'Delete Geneva Mechanism',
+      innerItems.push({
+        label: 'Delete',
         danger: true,
         action: function() {
           editor.saveState();
@@ -704,59 +820,36 @@
         }
       });
     } else {
-      // Empty space
+      // Empty canvas
       var pos = targetData;
-      items.push({
-        label: 'Add Ground Pin',
-        action: function() { editor.addNode(pos.x, pos.y, true); }
-      });
-      items.push({
-        label: 'Add Free Joint',
+      typeName = 'ADD';
+      subText = 'TOOL';
+      innerItems.push({
+        label: 'Joint',
         action: function() { editor.addNode(pos.x, pos.y, false); }
       });
-      items.push({
-        label: 'Add Gear Wheel',
+      innerItems.push({
+        label: 'Pin',
+        action: function() { editor.addNode(pos.x, pos.y, true); }
+      });
+      innerItems.push({
+        label: 'Beam',
         action: function() {
-          var cId = editor.addNode(pos.x, pos.y, true);
-          editor.addGear(cId, 45, 15);
+          var a = editor.addNode(pos.x - 40, pos.y, false);
+          var b = editor.addNode(pos.x + 40, pos.y, false);
+          editor.addRod(a, b);
         }
       });
-      items.push({
-        label: 'Add Pulley Wheel',
+      innerItems.push({
+        label: 'Spring',
         action: function() {
-          var cId = editor.addNode(pos.x, pos.y, true);
-          editor.addPulley(cId, 35);
+          var a = editor.addNode(pos.x - 35, pos.y, false);
+          var b = editor.addNode(pos.x + 35, pos.y, false);
+          editor.addSpring(a, b);
         }
       });
-      items.push({
-        label: 'Add Cam Profile (Pear Cam)',
-        action: function() {
-          var cId = editor.addNode(pos.x, pos.y, true);
-          editor.addCam(cId, 'pear', 35, 25);
-        }
-      });
-      items.push({
-        label: 'Add Cam Profile (Custom Vector Cam...)',
-        action: function() {
-          openCustomCamModal(null);
-        }
-      });
-      items.push({
-        label: 'Add Cam Profile (Eccentric Cam)',
-        action: function() {
-          var cId = editor.addNode(pos.x, pos.y, true);
-          editor.addCam(cId, 'eccentric', 35, 25);
-        }
-      });
-      items.push({
-        label: 'Add Cam Profile (Snail Drop Cam)',
-        action: function() {
-          var cId = editor.addNode(pos.x, pos.y, true);
-          editor.addCam(cId, 'snail', 35, 30);
-        }
-      });
-      items.push({
-        label: 'Add Horizontal Slider Rail',
+      innerItems.push({
+        label: 'Slider',
         action: function() {
           var a = editor.addNode(pos.x - 70, pos.y, true);
           var b = editor.addNode(pos.x + 70, pos.y, true);
@@ -764,38 +857,77 @@
           editor.addSlider(s, a, b);
         }
       });
-      items.push({
-        label: 'Add Shift / Control Lever',
+      innerItems.push({
+        label: 'Lever',
+        action: function() { editor.addLever(pos.x, pos.y); }
+      });
+      innerItems.push({
+        label: 'Gear',
         action: function() {
-          editor.addLever(pos.x, pos.y);
+          var cId = editor.addNode(pos.x, pos.y, true);
+          editor.addGear(cId, 45, 15);
         }
       });
-      items.push({
-        label: 'Clear All Motion Trails',
-        action: function() { editor.renderer.clearTraces(); editor.render(physics); }
+      innerItems.push({
+        label: 'Cam',
+        action: function() {
+          var cId = editor.addNode(pos.x, pos.y, true);
+          editor.addCam(cId, 'pear', 35, 25);
+        }
       });
     }
 
-    // Render context menu list
-    for (var i = 0; i < items.length; i++) {
-      (function(item) {
-        var div = document.createElement('div');
-        div.className = 'context-item' + (item.danger ? ' danger' : '');
-        div.textContent = item.label;
-        div.addEventListener('click', function(e) {
-          e.stopPropagation();
-          hideContextMenu();
-          item.action();
-        });
-        contextMenuEl.appendChild(div);
-      })(items[i]);
+    // Render center hub
+    var hub = document.createElement('div');
+    hub.className = 'radial-center';
+    var hubType = document.createElement('div');
+    hubType.className = 'radial-type';
+    hubType.textContent = typeName;
+    var hubSub = document.createElement('div');
+    hubSub.className = 'radial-sub';
+    hubSub.textContent = subText;
+    hub.appendChild(hubType);
+    hub.appendChild(hubSub);
+    hub.addEventListener('click', function(e) {
+      e.stopPropagation();
+      hideContextMenu();
+    });
+    radialMenuEl.appendChild(hub);
+
+    function renderRing(itemsList, radius) {
+      var count = itemsList.length;
+      if (count === 0) return;
+      var angleStep = (2 * Math.PI) / count;
+      var startAngle = -Math.PI / 2;
+      for (var i = 0; i < count; i++) {
+        (function(it, idx) {
+          var angle = startAngle + idx * angleStep;
+          var btn = document.createElement('div');
+          btn.className = 'radial-item' + (it.danger ? ' danger' : '') + (it.active ? ' active-opt' : '');
+          btn.textContent = it.label;
+          var px = Math.round(Math.cos(angle) * radius);
+          var py = Math.round(Math.sin(angle) * radius);
+          btn.style.left = px + 'px';
+          btn.style.top = py + 'px';
+          btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            hideContextMenu();
+            it.action();
+          });
+          radialMenuEl.appendChild(btn);
+        })(itemsList[i], i);
+      }
+    }
+
+    renderRing(innerItems, innerItems.length > 6 ? 85 : 74);
+    if (outerItems.length > 0) {
+      renderRing(outerItems, 134);
     }
   }
 
   function hideContextMenu() {
-    if (contextMenuEl) {
-      contextMenuEl.style.display = 'none';
-    }
+    if (contextMenuEl) contextMenuEl.style.display = 'none';
+    if (radialMenuEl) radialMenuEl.style.display = 'none';
   }
 
   function openInspector(type, data) {
@@ -840,7 +972,7 @@
       };
     } else if (type === 'rod') {
       var r = data.rod || data.item || editor.rods[data.index];
-      titleEl.textContent = 'Configure Rod / Link';
+      titleEl.textContent = 'Configure Beam / Link';
       bodyEl.innerHTML = 
         '<div class="form-group"><label>Material Preset</label><select id="insMat">' +
         '<option value="steel"' + (r.material === 'steel' ? ' selected' : '') + '>Rigid Steel (Diamond stiff)</option>' +
@@ -849,9 +981,24 @@
         '<option value="wood"' + (r.material === 'wood' ? ' selected' : '') + '>Composite Wood</option>' +
         '<option value="rubber"' + (r.material === 'rubber' ? ' selected' : '') + '>Rubber / Elastic Band</option>' +
         '</select></div>' +
+        '<div class="form-group"><label>Orientation Lock</label><select id="insAngleLock">' +
+        '<option value="none"' + ((!r.angleLock || r.angleLock === 'none') ? ' selected' : '') + '>Free Rotation</option>' +
+        '<option value="horizontal"' + (r.angleLock === 'horizontal' ? ' selected' : '') + '>Lock Horizontal (0 deg)</option>' +
+        '<option value="vertical"' + (r.angleLock === 'vertical' ? ' selected' : '') + '>Lock Vertical (90 deg)</option>' +
+        '<option value="fixed"' + (r.angleLock === 'fixed' ? ' selected' : '') + '>Fixed Angle</option>' +
+        '</select></div>' +
+        '<div class="form-group" id="insAngleDegWrap" style="display:' + (r.angleLock === 'fixed' ? 'flex' : 'none') + ';"><label>Locked Angle (degrees)</label><input type="number" id="insAngleDeg" value="' + Math.round((r.lockedAngle || 0) * 180 / Math.PI) + '" step="5"></div>' +
         '<div class="form-group"><label>Length</label><input type="number" id="insLen" value="' + Math.round(r.length) + '" step="1" min="5"></div>' +
         '<div class="form-group"><label>Width</label><input type="number" id="insWidth" value="' + (r.width || 12) + '" step="1" min="4"></div>' +
         '<div class="form-group"><label>Color</label><input type="color" id="insColor" value="' + (r.color || '#3b82f6') + '"></div>';
+
+      var lockSelect = document.getElementById('insAngleLock');
+      var degWrap = document.getElementById('insAngleDegWrap');
+      if (lockSelect && degWrap) {
+        lockSelect.addEventListener('change', function() {
+          degWrap.style.display = lockSelect.value === 'fixed' ? 'flex' : 'none';
+        });
+      }
 
       saveHandler = function() {
         editor.saveState();
@@ -862,6 +1009,12 @@
         r.length = Math.max(5, parseFloat(document.getElementById('insLen').value) || r.length);
         r.width = Math.max(4, parseInt(document.getElementById('insWidth').value, 10) || r.width);
         r.color = document.getElementById('insColor').value || mat.color;
+        var lockVal = document.getElementById('insAngleLock').value;
+        r.angleLock = lockVal;
+        if (lockVal === 'fixed') {
+          var deg = parseFloat(document.getElementById('insAngleDeg').value) || 0;
+          r.lockedAngle = deg * Math.PI / 180;
+        }
         editor._notifyChange();
       };
     } else if (type === 'spring') {

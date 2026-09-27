@@ -618,4 +618,86 @@ console.log('Running Linksim Physics & Timeline Test Suite...');
   console.log('PASS: Multi-speed Gearbox preset loading and dynamic transmission');
 }
 
+// Test 22: Beam orientation angle locking (horizontal, vertical, and fixed angle)
+{
+  const sim = new PhysicsSystem();
+  // Turn gravity on downwards
+  sim.gravityY = 980;
+
+  // Horizontal locked beam between free node 0 and free node 1
+  const h0 = sim.addNode(0, 100, false);
+  const h1 = sim.addNode(100, 100, false);
+  sim.addRod(h0, h1, 100, { angleLock: 'horizontal' });
+
+  // Vertical locked beam between free node 2 and free node 3
+  const v0 = sim.addNode(200, 0, false);
+  const v1 = sim.addNode(200, 80, false);
+  sim.addRod(v0, v1, 80, { angleLock: 'vertical' });
+
+  // Fixed 45-degree locked beam between free node 4 and free node 5
+  const a0 = sim.addNode(300, 0, false);
+  const a1 = sim.addNode(350, 50, false);
+  sim.addRod(a0, a1, undefined, { angleLock: 'fixed', lockedAngle: Math.PI / 4 });
+
+  // Step 60 frames under heavy vertical gravity
+  for (let f = 0; f < 60; f++) {
+    sim.step(1 / 60);
+  }
+
+  // Horizontal beam must remain strictly horizontal (y difference ~ 0)
+  const dyH = Math.abs(sim.y[h1] - sim.y[h0]);
+  assert(dyH < 1e-4, `Horizontal beam tilted under gravity: dy = ${dyH}`);
+
+  // Vertical beam must remain strictly vertical (x difference ~ 0)
+  const dxV = Math.abs(sim.x[v1] - sim.x[v0]);
+  assert(dxV < 1e-4, `Vertical beam tilted under gravity: dx = ${dxV}`);
+
+  // Fixed 45-degree beam angle must remain at 45 degrees (PI/4)
+  const angle45 = Math.atan2(sim.y[a1] - sim.y[a0], sim.x[a1] - sim.x[a0]);
+  assert(Math.abs(angle45 - Math.PI / 4) < 1e-3, `45-degree locked beam drifted: angle = ${angle45}`);
+
+  console.log('PASS: Beam orientation angle locks (horizontal, vertical, fixed angle) under gravity');
+}
+
+// Test 23: Slider-crank full 360-degree stroke continuity without artificial limits
+{
+  const MechanismEditor = require('../js/editor.js');
+  const preset = MechanismEditor.Presets.sliderCrank;
+  const sim = new PhysicsSystem();
+
+  for (let i = 0; i < preset.nodes.length; i++) {
+    const n = preset.nodes[i];
+    sim.addNode(n.x, n.y, n.fixed, n.mass);
+  }
+  for (let r = 0; r < preset.rods.length; r++) {
+    const rod = preset.rods[r];
+    sim.addRod(rod.a, rod.b, rod.length);
+  }
+  for (let s = 0; s < preset.sliders.length; s++) {
+    const sl = preset.sliders[s];
+    sim.addSlider(sl.node, sl.aNode, sl.bNode, sl.minT, sl.maxT);
+  }
+  for (let m = 0; m < preset.motors.length; m++) {
+    const mot = preset.motors[m];
+    sim.addMotor(mot.centerNode, mot.crankNode, mot.speed);
+  }
+
+  // Run full 2 rotations (~120 frames at 3.5 rad/s)
+  let minX = Infinity;
+  let maxX = -Infinity;
+  for (let f = 0; f < 120; f++) {
+    sim.step(1 / 60);
+    const px = sim.x[2];
+    if (px < minX) minX = px;
+    if (px > maxX) maxX = px;
+  }
+
+  // Piston should smoothly sweep past 0 without returning to 0 or getting stuck
+  assert(minX < 0, `Piston did not stroke past 0: minX = ${minX}`);
+  assert(maxX > 50, `Piston did not stroke forward: maxX = ${maxX}`);
+  assert(Math.abs(sim.y[2]) < 1e-4, `Piston drifted vertically off rail: y = ${sim.y[2]}`);
+
+  console.log('PASS: Slider-crank full 360-degree stroke continuity without artificial end-stop stalls');
+}
+
 console.log('All tests passed successfully!');
