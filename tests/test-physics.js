@@ -700,4 +700,49 @@ console.log('Running Linksim Physics & Timeline Test Suite...');
   console.log('PASS: Slider-crank full 360-degree stroke continuity without artificial end-stop stalls');
 }
 
+// Test 24: Clock Escapement with ratchet cam profile & physical contact stepping
+{
+  const sim = new PhysicsSystem();
+  // Escape wheel center
+  const n0 = sim.addNode(0, 30, true);
+  // Anchor pallet pivot
+  const n1 = sim.addNode(0, -45, true);
+  // Left and right pallets
+  const n2 = sim.addNode(-38, -5, false, 0.5);
+  const n3 = sim.addNode(38, -5, false, 0.5);
+  // Pendulum bob
+  const n4 = sim.addNode(0, 120, false, 2.0);
+
+  // Springs for oscillation
+  const sA = sim.addNode(-60, 120, true);
+  const sB = sim.addNode(60, 120, true);
+
+  sim.addCam(n0, 'escapement', 40, 18, { teeth: 8 });
+  sim.addCamContact(0, n2, 6);
+  sim.addCamContact(0, n3, 6);
+  sim.addMotor(n0, n0, 2.5, { maxTorque: 1200 });
+
+  sim.addRigidBracket(n2, n1, n3, 10);
+  sim.addRigidBracket(n2, n1, n4, 8);
+  sim.addSpring(sA, n4, 55, 120);
+  sim.addSpring(sB, n4, 55, 120);
+
+  // Initial displacement
+  sim.x[n4] = 20;
+
+  // Step 120 frames (2 seconds)
+  for (let f = 0; f < 120; f++) {
+    sim.step(1 / 60);
+  }
+
+  const escCam = sim.cams[0];
+  // Verify escape wheel rotated forward under intermittent escapement control
+  assert(escCam.angle > 0.5, `Escape wheel did not advance: angle = ${escCam.angle}`);
+  // Verify anchor bracket maintains distance from pivot
+  const dPivotPallet = Math2D.dist(sim.x[n1], sim.y[n1], sim.x[n2], sim.y[n2]);
+  assert(Math.abs(dPivotPallet - Math2D.dist(0, -45, -38, -5)) < 1.0, `Anchor pallet arm flexed: ${dPivotPallet}`);
+
+  console.log('PASS: Clock Escapement with ratchet cam profile & physical contact stepping');
+}
+
 console.log('All tests passed successfully!');

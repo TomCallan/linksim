@@ -36,6 +36,7 @@
     this.camContacts = [];    // [{ camIdx, followerNode, rollerRadius }]
     this.springs = [];        // [{ a, b, restLength, stiffness, width, color }]
     this.labels = [];          // [{ x, y, text, fontSize, color, bold }]
+    this.shapeVertices = [];   // [{ x, y }] in-progress custom vector shape vertices
     this.trackedNodes = new Set(); // Node IDs being tracked for motion paths
 
     // Selection state for all elements
@@ -526,6 +527,135 @@
     this.attachNodeToGear(pinId, gearIdx);
   };
 
+  MechanismEditor.prototype.attachNodeToPulley = function(nodeId, pulleyIdx) {
+    var pul = this.pulleys[pulleyIdx];
+    var node = this.getNodeById(nodeId);
+    if (!pul || !node) return;
+    var cNode = this.getNodeById(pul.nodeId);
+    if (!cNode) return;
+
+    this.saveState();
+    var r = Math2D.dist(cNode.x, cNode.y, node.x, node.y);
+    var angleOffset = Math.atan2(node.y - cNode.y, node.x - cNode.x);
+    node.parentPulley = {
+      pulleyIdx: pulleyIdx,
+      radius: r,
+      angleOffset: angleOffset
+    };
+    this._notifyChange();
+  };
+
+  MechanismEditor.prototype.attachNodeToCam = function(nodeId, camIdx) {
+    var cam = this.cams[camIdx];
+    var node = this.getNodeById(nodeId);
+    if (!cam || !node) return;
+    var cNode = this.getNodeById(cam.centerNode);
+    if (!cNode) return;
+
+    this.saveState();
+    var r = Math2D.dist(cNode.x, cNode.y, node.x, node.y);
+    var angleOffset = Math.atan2(node.y - cNode.y, node.x - cNode.x);
+    node.parentCam = {
+      camIdx: camIdx,
+      radius: r,
+      angleOffset: angleOffset
+    };
+    this._notifyChange();
+  };
+
+  MechanismEditor.prototype.attachNodeToGeneva = function(nodeId, genevaIdx) {
+    var gen = this.genevas[genevaIdx];
+    var node = this.getNodeById(nodeId);
+    if (!gen || !node) return;
+    var cNode = this.getNodeById(gen.genevaCenterNode);
+    if (!cNode) return;
+
+    this.saveState();
+    var r = Math2D.dist(cNode.x, cNode.y, node.x, node.y);
+    var angleOffset = Math.atan2(node.y - cNode.y, node.x - cNode.x);
+    node.parentGeneva = {
+      genevaIdx: genevaIdx,
+      radius: r,
+      angleOffset: angleOffset
+    };
+    this._notifyChange();
+  };
+
+  MechanismEditor.prototype.createPinOnTarget = function(elem, wx, wy) {
+    if (!elem) return -1;
+    var pinId = this.addNode(wx, wy, false);
+    if (elem.type === 'gear') {
+      this.attachNodeToGear(pinId, elem.index);
+    } else if (elem.type === 'pulley') {
+      this.attachNodeToPulley(pinId, elem.index);
+    } else if (elem.type === 'cam') {
+      this.attachNodeToCam(pinId, elem.index);
+    } else if (elem.type === 'geneva') {
+      this.attachNodeToGeneva(pinId, elem.index);
+    }
+    return pinId;
+  };
+
+  MechanismEditor.prototype.rotateSliderRail = function(sliderIdx, angleDeg, railLength) {
+    var sl = this.sliders[sliderIdx];
+    if (!sl) return;
+    var na = this.getNodeById(sl.aNode);
+    var nb = this.getNodeById(sl.bNode);
+    if (!na || !nb) return;
+
+    this.saveState();
+    var cx = (na.x + nb.x) / 2;
+    var cy = (na.y + nb.y) / 2;
+    var L = (railLength !== undefined && railLength > 10) ? railLength : Math2D.dist(na.x, na.y, nb.x, nb.y);
+    if (L < 20) L = 140;
+
+    var rad = (angleDeg || 0) * Math.PI / 180;
+    var halfL = L / 2;
+    na.x = cx - halfL * Math.cos(rad);
+    na.y = cy - halfL * Math.sin(rad);
+    nb.x = cx + halfL * Math.cos(rad);
+    nb.y = cy + halfL * Math.sin(rad);
+
+    var sNode = this.getNodeById(sl.node);
+    if (sNode) {
+      var proj = Math2D.projectPointOnLine(sNode.x, sNode.y, na.x, na.y, nb.x, nb.y);
+      sNode.x = proj[0];
+      sNode.y = proj[1];
+    }
+    this._notifyChange();
+  };
+
+  MechanismEditor.prototype.finishCustomShape = function() {
+    var n = this.shapeVertices.length;
+    if (n < 3) {
+      this.shapeVertices = [];
+      this.render();
+      return;
+    }
+    var sumX = 0, sumY = 0;
+    for (var i = 0; i < n; i++) {
+      sumX += this.shapeVertices[i].x;
+      sumY += this.shapeVertices[i].y;
+    }
+    var cx = sumX / n;
+    var cy = sumY / n;
+    var maxR = 0;
+    var localPts = [];
+    for (var i = 0; i < n; i++) {
+      var lx = this.shapeVertices[i].x - cx;
+      var ly = this.shapeVertices[i].y - cy;
+      var dist = Math.hypot(lx, ly);
+      if (dist > maxR) maxR = dist;
+      localPts.push([Math.round(lx * 10) / 10, Math.round(ly * 10) / 10]);
+    }
+    this.saveState();
+    var cId = this.addNode(cx, cy, true);
+    this.addCam(cId, 'custom', Math.max(15, Math.round(maxR)), 0, { points: localPts });
+    this.shapeVertices = [];
+    this.setTool('select');
+    this._notifyChange();
+  };
+
   MechanismEditor.prototype.addMotor = function(centerId, crankId, speed, options) {
     options = options || {};
     this.saveState();
@@ -705,6 +835,7 @@
     this.cams = [];
     this.camContacts = [];
     this.labels = [];
+    this.shapeVertices = [];
     this.selection = null;
     this.trackedNodes.clear();
     if (this.renderer) {
@@ -993,6 +1124,21 @@
         return;
       }
 
+      // In Edit Mode: Draw Custom Shape / Polygon
+      if (self.activeTool === 'draw_shape') {
+        if (self.shapeVertices.length >= 3) {
+          var firstV = self.shapeVertices[0];
+          if (Math2D.dist(w.x, w.y, firstV.x, firstV.y) < 18 / self.zoom) {
+            self.finishCustomShape();
+            self.render();
+            return;
+          }
+        }
+        self.shapeVertices.push({ x: w.x, y: w.y });
+        self.render();
+        return;
+      }
+
       // In Edit Mode: Universal Element Selection and Tool Interactions
       var elem = self.findElementNear(w.x, w.y);
 
@@ -1006,12 +1152,30 @@
         } else if (self.activeTool === 'delete') {
           self.selection = elem;
           self.deleteSelection();
-        } else if (self.activeTool === 'add_rod' && elem.type === 'node') {
-          self.connectStartNode = elem.index;
-          self.isConnecting = true;
-        } else if (self.activeTool === 'add_spring' && elem.type === 'node') {
-          self.connectStartNode = elem.index;
-          self.isConnectingSpring = true;
+        } else if ((self.activeTool === 'add_node' || self.activeTool === 'add_pin') &&
+                   (elem.type === 'gear' || elem.type === 'pulley' || elem.type === 'cam' || elem.type === 'geneva')) {
+          // Direct click on a moving target (gear, pulley, cam, geneva) creates an attached connection pin!
+          self.createPinOnTarget(elem, w.x, w.y);
+          self.render();
+          return;
+        } else if (self.activeTool === 'add_rod') {
+          if (elem.type === 'node') {
+            self.connectStartNode = elem.index;
+            self.isConnecting = true;
+          } else if (elem.type === 'gear' || elem.type === 'pulley' || elem.type === 'cam' || elem.type === 'geneva') {
+            var pinId = self.createPinOnTarget(elem, w.x, w.y);
+            self.connectStartNode = pinId;
+            self.isConnecting = true;
+          }
+        } else if (self.activeTool === 'add_spring') {
+          if (elem.type === 'node') {
+            self.connectStartNode = elem.index;
+            self.isConnectingSpring = true;
+          } else if (elem.type === 'gear' || elem.type === 'pulley' || elem.type === 'cam' || elem.type === 'geneva') {
+            var pinId = self.createPinOnTarget(elem, w.x, w.y);
+            self.connectStartNode = pinId;
+            self.isConnectingSpring = true;
+          }
         } else if (self.activeTool === 'add_gear' && elem.type === 'node') {
           self.addGear(elem.index, 45, 15);
         } else if (self.activeTool === 'add_pulley' && elem.type === 'node') {
@@ -1178,10 +1342,10 @@
         } else if (self.findSliderNear(w.x, w.y) !== -1 || self.hoverGearIdx !== -1) {
           canvas.style.cursor = 'grab';
         } else {
-          canvas.style.cursor = 'crosshair';
+          canvas.style.cursor = '';
         }
       } else {
-        canvas.style.cursor = 'crosshair';
+        canvas.style.cursor = '';
       }
 
       // Dragging a node in Edit Mode
@@ -1277,15 +1441,21 @@
             // Connect to existing node
             self.addRod(self.connectStartNode, nearNode);
           } else if (nearNode === -1) {
-            var startN = self.getNodeById(self.connectStartNode);
-            var distToStart = startN ? Math2D.dist(startN.x, startN.y, w.x, w.y) : 0;
-            if (distToStart > 15) {
-              var endNode = self.addNode(w.x, w.y, false);
-              self.addRod(self.connectStartNode, endNode);
-            } else if (self._startedInEmptySpace && startN) {
-              // Single click in empty space creates horizontal 80px beam
-              var endNode = self.addNode(startN.x + 80, startN.y, false);
-              self.addRod(self.connectStartNode, endNode);
+            var elemNear = self.findElementNear(w.x, w.y);
+            if (elemNear && (elemNear.type === 'gear' || elemNear.type === 'pulley' || elemNear.type === 'cam' || elemNear.type === 'geneva')) {
+              var targetPin = self.createPinOnTarget(elemNear, w.x, w.y);
+              self.addRod(self.connectStartNode, targetPin);
+            } else {
+              var startN = self.getNodeById(self.connectStartNode);
+              var distToStart = startN ? Math2D.dist(startN.x, startN.y, w.x, w.y) : 0;
+              if (distToStart > 15) {
+                var endNode = self.addNode(w.x, w.y, false);
+                self.addRod(self.connectStartNode, endNode);
+              } else if (self._startedInEmptySpace && startN) {
+                // Single click in empty space creates horizontal 80px beam
+                var endNode = self.addNode(startN.x + 80, startN.y, false);
+                self.addRod(self.connectStartNode, endNode);
+              }
             }
           }
         }
@@ -1297,14 +1467,20 @@
           if (nearNode !== -1 && nearNode !== self.connectStartNode) {
             self.addSpring(self.connectStartNode, nearNode);
           } else if (nearNode === -1) {
-            var startN = self.getNodeById(self.connectStartNode);
-            var distToStart = startN ? Math2D.dist(startN.x, startN.y, w.x, w.y) : 0;
-            if (distToStart > 15) {
-              var endNode = self.addNode(w.x, w.y, false);
-              self.addSpring(self.connectStartNode, endNode);
-            } else if (self._startedInEmptySpace && startN) {
-              var endNode = self.addNode(startN.x + 70, startN.y, false);
-              self.addSpring(self.connectStartNode, endNode);
+            var elemNear = self.findElementNear(w.x, w.y);
+            if (elemNear && (elemNear.type === 'gear' || elemNear.type === 'pulley' || elemNear.type === 'cam' || elemNear.type === 'geneva')) {
+              var targetPin = self.createPinOnTarget(elemNear, w.x, w.y);
+              self.addSpring(self.connectStartNode, targetPin);
+            } else {
+              var startN = self.getNodeById(self.connectStartNode);
+              var distToStart = startN ? Math2D.dist(startN.x, startN.y, w.x, w.y) : 0;
+              if (distToStart > 15) {
+                var endNode = self.addNode(w.x, w.y, false);
+                self.addSpring(self.connectStartNode, endNode);
+              } else if (self._startedInEmptySpace && startN) {
+                var endNode = self.addNode(startN.x + 70, startN.y, false);
+                self.addSpring(self.connectStartNode, endNode);
+              }
             }
           }
         }
@@ -1327,6 +1503,12 @@
         }
 
         self.render();
+      });
+
+      canvas.addEventListener('dblclick', function(e) {
+        if (self.activeTool === 'draw_shape' && self.shapeVertices.length >= 3) {
+          self.finishCustomShape();
+        }
       });
     }
 
@@ -1939,6 +2121,43 @@
       }
     }
 
+    // 8.95 Draw In-Progress Custom Vector Shape / Polygon
+    if (this.shapeVertices && this.shapeVertices.length > 0) {
+      ctx.save();
+      var spts = this.shapeVertices;
+      ctx.beginPath();
+      ctx.moveTo(spts[0].x, spts[0].y);
+      for (var vi = 1; vi < spts.length; vi++) {
+        ctx.lineTo(spts[vi].x, spts[vi].y);
+      }
+      ctx.lineTo(this.mouseWorldX, this.mouseWorldY);
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = '#0284c7';
+      ctx.setLineDash([6, 4]);
+      ctx.stroke();
+
+      // Return dashed guide to start vertex
+      ctx.beginPath();
+      ctx.moveTo(this.mouseWorldX, this.mouseWorldY);
+      ctx.lineTo(spts[0].x, spts[0].y);
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = 'rgba(2, 132, 199, 0.4)';
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Vertices
+      for (var vi = 0; vi < spts.length; vi++) {
+        ctx.beginPath();
+        ctx.arc(spts[vi].x, spts[vi].y, vi === 0 ? 7 : 5, 0, Math.PI * 2);
+        ctx.fillStyle = vi === 0 ? '#10b981' : '#0284c7';
+        ctx.fill();
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = '#ffffff';
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
     ctx.restore();
 
     // 9. Physical SI scale ruler
@@ -2081,7 +2300,7 @@
       nodes: [
         { id: 0, x: -100, y: 0, fixed: true, mass: 1 },    // Gear 1 center
         { id: 1, x: 0, y: 0, fixed: true, mass: 1 },       // Gear 2 center
-        { id: 2, x: 0, y: 35, fixed: false, mass: 1 },     // Pin attached on Gear 2
+        { id: 2, x: 0, y: 35, fixed: false, mass: 1, parentGear: { gearIdx: 1, radius: 35, angleOffset: Math.PI / 2 } },     // Pin attached on Gear 2
         { id: 3, x: 90, y: 35, fixed: false, mass: 1 },    // Bell-crank input
         { id: 4, x: 90, y: 80, fixed: true, mass: 1 },     // Bell-crank pivot
         { id: 5, x: 135, y: 80, fixed: false, mass: 1 },   // Bell-crank 90-deg output
@@ -2141,7 +2360,7 @@
         { id: 0, x: -60, y: 0, fixed: true, mass: 1 },    // Driver crank center C1
         { id: 1, x: 60, y: 0, fixed: true, mass: 1 },     // Geneva wheel center C2
         { id: 2, x: 0, y: -60, fixed: false, mass: 1 },   // Drive crank pin (at -45 deg from C1, dist=84.85)
-        { id: 3, x: 60, y: 55, fixed: false, mass: 1, parentGeneva: { genevaIdx: 0, radius: 55, angleOffset: Math.PI / 2 } }, // Follower pin on Geneva
+        { id: 3, x: 99, y: 39, fixed: false, mass: 1, parentGeneva: { genevaIdx: 0, radius: 55, angleOffset: Math.PI / 2 } }, // Follower pin on Geneva
         { id: 4, x: 185, y: 55, fixed: false, mass: 1 },  // Transmission rocker joint
         { id: 5, x: 185, y: 140, fixed: true, mass: 1 }   // Rocker ground pivot
       ],
@@ -2153,7 +2372,7 @@
       sliders: [],
       gears: [],
       genevas: [
-        { driverCenterNode: 0, driverPinNode: 2, genevaCenterNode: 1, slots: 4, radius: 84.85, pinRadius: 84.85, lockRadius: 40, slotWidth: 11, angle: 0 }
+        { driverCenterNode: 0, driverPinNode: 2, genevaCenterNode: 1, slots: 4, radius: 84.85, pinRadius: 84.85, lockRadius: 40, slotWidth: 11, angle: -0.7854 }
       ],
       motors: [
         { centerNode: 0, crankNode: 2, speed: 3.0 }
@@ -2247,6 +2466,8 @@
     },
 
     // 9. Multi-Speed Gearbox & Shifter Transmission (Dynamic Meshing & Shift Lever)
+    // Lever pivot at (130,0), handle OUT TO THE SIDE at (185,10), output arm DOWN at (130,-60).
+    // Non-collinear layout gives a proper rigid triangle. Drag handle left/right to shift.
     gearbox: {
       version: '2.0',
       nodes: [
@@ -2255,12 +2476,12 @@
         { id: 2, x: 25, y: -110, fixed: true, mass: 1 },    // Shifter slider rail start
         { id: 3, x: 25, y: 110, fixed: true, mass: 1 },     // Shifter slider rail end
         { id: 4, x: 25, y: -50, fixed: false, mass: 1 },    // Shifter slider carriage & Shift Gear
-        { id: 5, x: 130, y: 0, fixed: true, mass: 1 },      // Shift Lever Fulcrum Pivot
-        { id: 6, x: 130, y: 80, fixed: false, mass: 1, isHandle: true }, // Shift Knob (Drag to Shift)
-        { id: 7, x: 130, y: -50, fixed: false, mass: 1 }    // Shift Lever Output Linkage Arm
+        { id: 5, x: 130, y: 0, fixed: true, mass: 1 },      // Shift Lever Fulcrum Pivot (FIXED pin)
+        { id: 6, x: 185, y: 10, fixed: false, mass: 1, isHandle: true }, // Shift Knob - drag LEFT/RIGHT
+        { id: 7, x: 130, y: -60, fixed: false, mass: 1 }    // Shift Lever Output Arm (drives slider)
       ],
       rods: [
-        { a: 7, b: 4, length: 105, width: 9, color: '#64748b' } // Linkage rod from lever to slider
+        { a: 7, b: 4, length: 110, width: 9, color: '#64748b' } // Linkage rod from lever to slider
       ],
       springs: [],
       sliders: [
@@ -2285,11 +2506,60 @@
         { centerNode: 0, crankNode: 0, speed: 3.0, maxTorque: 8000 }
       ],
       brackets: [
-        { a: 6, b: 5, c: 7, width: 14, color: '#6366f1' } // Rigid shift lever
+        { a: 6, b: 5, c: 7, width: 14, color: '#6366f1' } // Rigid shift lever (L-shaped, non-collinear)
+      ],
+      labels: [
+        { x: 155, y: -90, text: 'Drag knob to shift gears', fontSize: 11, color: '#6366f1', bold: false }
       ]
     },
 
-    // 10. Mechanism Showcase: several independent mechanisms demonstrating different features
+    // 10. Clock Escapement & Pendulum Governor (Tooth Stepping & One-Way Ratchet)
+    escapement: {
+      version: '2.0',
+      nodes: [
+        { id: 0, x: 0, y: 35, fixed: true, mass: 1 },      // Escape Wheel Center Pivot
+        { id: 1, x: 0, y: -45, fixed: true, mass: 1 },     // Anchor Pallet Pivot
+        { id: 2, x: -38, y: -5, fixed: false, mass: 0.5 }, // Left Pallet (Entry)
+        { id: 3, x: 38, y: -5, fixed: false, mass: 0.5 },  // Right Pallet (Exit)
+        { id: 4, x: 20, y: 130, fixed: false, mass: 2.5 }, // Pendulum Bob (Heavy Mass)
+        { id: 5, x: -65, y: 130, fixed: true, mass: 1 },   // Left Spring Anchor
+        { id: 6, x: 65, y: 130, fixed: true, mass: 1 }     // Right Spring Anchor
+      ],
+      rods: [
+        { a: 1, b: 4, length: 175, width: 8, color: '#64748b' } // Pendulum Rod
+      ],
+      springs: [
+        { a: 5, b: 4, restLength: 55, stiffness: 140, width: 12, color: '#10b981' },
+        { a: 6, b: 4, restLength: 55, stiffness: 140, width: 12, color: '#10b981' }
+      ],
+      sliders: [],
+      gears: [],
+      pulleys: [],
+      belts: [],
+      axles: [],
+      genevas: [],
+      cams: [
+        { centerNode: 0, profileType: 'escapement', baseRadius: 40, lift: 18, options: { teeth: 8 } }
+      ],
+      camContacts: [
+        { camIdx: 0, followerNode: 2, rollerRadius: 6 },
+        { camIdx: 0, followerNode: 3, rollerRadius: 6 }
+      ],
+      motors: [
+        { centerNode: 0, crankNode: 0, speed: 2.2, maxTorque: 1200 }
+      ],
+      brackets: [
+        { a: 2, b: 1, c: 3, width: 12, color: '#6366f1' }, // Anchor Pallet Lever
+        { a: 2, b: 1, c: 4, width: 8, color: '#6366f1' }  // Anchor attached to Pendulum
+      ],
+      labels: [
+        { x: -90, y: -75, text: 'Anchor Pallet (Escapement)', fontSize: 13, bold: true, color: '#4338ca' },
+        { x: -100, y: 40, text: '8-Tooth Escape Wheel', fontSize: 12, color: '#0369a1' },
+        { x: -60, y: 155, text: 'Oscillating Pendulum', fontSize: 12, color: '#047857' }
+      ]
+    },
+
+    // 11. Mechanism Showcase: several independent mechanisms demonstrating different features
     // Layout: Slider-Crank (left), Gear Train (centre), Cam-Follower (right), Spring-Mass (bottom)
     showcase: {
       version: '2.0',
@@ -2344,7 +2614,8 @@
         { a: 9, b: 12, restLength: 35, stiffness: 250, width: 10, color: '#6366f1' }
       ],
       sliders: [
-        { node: 2, aNode: 3, bNode: 4 }   // Piston slider rail
+        { node: 2, aNode: 3, bNode: 4 },   // Piston slider rail
+        { node: 9, aNode: 10, bNode: 11 }  // Cam follower vertical guide
       ],
       gears: [
         { centerNode: 5, radius: 30, teeth: 12, meshWith: [1] },   // Input pinion

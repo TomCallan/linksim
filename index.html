@@ -181,8 +181,8 @@
       box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
     .playback-bar {
-      height: 52px;
-      min-height: 52px;
+      height: 46px;
+      min-height: 46px;
       max-width: 100vw;
       width: 100%;
       box-sizing: border-box;
@@ -193,28 +193,29 @@
       border-top: 1px solid #e2e8f0;
       gap: 8px;
       z-index: 10;
-      overflow-x: auto;
-      overflow-y: hidden;
-      scrollbar-width: thin;
+      overflow: hidden;
       flex-shrink: 0;
-    }
-    .playback-bar::-webkit-scrollbar {
-      height: 3px;
-    }
-    .playback-bar::-webkit-scrollbar-thumb {
-      background: #cbd5e1;
-      border-radius: 2px;
     }
     .playback-controls {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 5px;
+      flex-shrink: 0;
+    }
+    .playback-controls button {
+      padding: 3px 8px;
+      font-size: 0.78rem;
+    }
+    .playback-controls select {
+      padding: 2px 4px;
+      font-size: 0.78rem;
     }
     .scrubber-wrap {
       flex: 1;
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
+      min-width: 140px;
     }
     .slider {
       flex: 1;
@@ -224,25 +225,30 @@
     }
     .frame-info {
       font-family: monospace;
-      font-size: 0.75rem;
+      font-size: 0.72rem;
       color: #64748b;
-      min-width: 105px;
+      min-width: 95px;
       text-align: right;
+      white-space: nowrap;
     }
     .options-bar {
       display: flex;
       align-items: center;
-      gap: 12px;
-      font-size: 0.78rem;
+      gap: 8px;
+      font-size: 0.73rem;
       color: #475569;
       border-left: 1px solid #e2e8f0;
-      padding-left: 12px;
+      padding-left: 8px;
+      flex-shrink: 0;
     }
     .options-bar label {
       display: flex;
       align-items: center;
-      gap: 4px;
+      gap: 3px;
       cursor: pointer;
+      white-space: nowrap;
+      user-select: none;
+    }
     }
     /* Radial Context Menu */
     #radialMenu {
@@ -423,6 +429,7 @@
     <button data-tool="add_cam" title="Add Cam Profile">Cam</button>
     <button data-tool="add_motor" title="Attach Motor (M)">Motor</button>
     <button data-tool="add_label" title="Add Text Label (T) - Click to place">Label</button>
+    <button data-tool="draw_shape" title="Draw Custom Vector Geometry / Cam (D) - Click points, click start or double-click to close">Shape</button>
     <button data-tool="delete" class="btn-danger" title="Delete element (X)">Del</button>
   </div>
 
@@ -441,6 +448,7 @@
       <option value="camFollower">Cam & Valve Follower</option>
       <option value="beltDrive">Belt Drive & Jackshaft</option>
       <option value="gearbox">Multi-Speed Gearbox</option>
+      <option value="escapement">Clock Escapement</option>
       <option value="showcase">Mechanism Showcase</option>
     </select>
     <div id="fpsMeter" class="fps-badge">60 FPS</div>
@@ -456,12 +464,12 @@
 
 <div class="playback-bar">
   <div class="playback-controls">
-    <button id="btnPlay" style="min-width:65px; font-weight:600;">Pause</button>
+    <button id="btnPlay" style="min-width:60px; font-weight:600;">Pause</button>
     <button id="btnStepBack" title="Step backward ([)">Step Back</button>
     <button id="btnStepForward" title="Step forward (])">Step Forward</button>
     <button id="btnReset" title="Reset to initial frame">Reset</button>
 
-    <label style="margin-left:8px; font-size:0.8rem; color:#475569;" for="speedSelect">Speed:</label>
+    <label style="margin-left:6px; font-size:0.75rem; color:#475569;" for="speedSelect">Speed:</label>
     <select id="speedSelect">
       <option value="0.25">0.25x</option>
       <option value="0.5">0.5x</option>
@@ -478,13 +486,13 @@
   </div>
 
   <div class="options-bar">
-    <label title="Simplify all ground pins to sleek points globally (hide anchor stands)"><input type="checkbox" id="toggleHidePins"> Clean Pins</label>
-    <label title="Detect periodic cycles and play from frame cache without physics solving"><input type="checkbox" id="toggleLoopCache" checked> Loop Cache</label>
-    <label><input type="checkbox" id="toggleGravity"> Gravity</label>
-    <label><input type="checkbox" id="toggleStress" checked> Stress</label>
-    <label><input type="checkbox" id="toggleTraces" checked> Traces</label>
-    <label><input type="checkbox" id="toggleDimensions"> Dimensions</label>
-    <label><input type="checkbox" id="toggleVelocities"> Velocities</label>
+    <label title="Simplify all ground pins to sleek points globally"><input type="checkbox" id="toggleHidePins"> Clean Pins</label>
+    <label title="Detect periodic cycles and play from frame cache without physics solving"><input type="checkbox" id="toggleLoopCache" checked> Loop</label>
+    <label title="Toggle vertical gravity"><input type="checkbox" id="toggleGravity"> Gravity</label>
+    <label title="Visualize tensile/compressive stress"><input type="checkbox" id="toggleStress" checked> Stress</label>
+    <label title="Render motion path curves"><input type="checkbox" id="toggleTraces" checked> Traces</label>
+    <label title="Show dimensions & angles"><input type="checkbox" id="toggleDimensions"> Dims</label>
+    <label title="Show dynamic velocity arrows"><input type="checkbox" id="toggleVelocities"> Vel</label>
   </div>
 </div>
 

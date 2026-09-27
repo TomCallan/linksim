@@ -69,8 +69,8 @@
     // Simulation settings
     this.gravityX = 0;
     this.gravityY = 0; // Linkages typically operate in horizontal plane by default (set to 980 for vertical)
-    this.substeps = 20;
-    this.solverIterations = 2;
+    this.substeps = 30;
+    this.solverIterations = 4;
     this.damping = 0.002;
     this.time = 0;
 

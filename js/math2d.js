@@ -50,6 +50,7 @@
     },
 
     projectPointOnLine: function(px, py, ax, ay, bx, by, out) {
+      out = out || [];
       var abx = bx - ax;
       var aby = by - ay;
       var lenSq = abx * abx + aby * aby;
@@ -221,10 +222,36 @@
           var genevaPts = Math2D.getGenevaPoints(gSlots, baseRadius, gCenterDist, gSlotWidth, options);
           return Math2D.getCamRadius('custom', theta, baseRadius, lift, { points: genevaPts });
 
+        case 'ratchet':
+        case 'escapement':
+          var eTeeth = options.teeth || 8;
+          var escPts = Math2D.getEscapeWheelPoints(eTeeth, baseRadius + lift, baseRadius);
+          return Math2D.getCamRadius('custom', theta, baseRadius, lift, { points: escPts });
+
         case 'circle':
         default:
           return baseRadius;
       }
+    },
+
+    /**
+     * Compute mathematically exact 2D vector polygon of a Clock Escape Wheel with ratchet teeth.
+     */
+    getEscapeWheelPoints: function(teeth, outerRadius, innerRadius) {
+      teeth = teeth || 8;
+      outerRadius = outerRadius || 60;
+      innerRadius = innerRadius || 42;
+      var pts = [];
+      var dTheta = (Math.PI * 2) / teeth;
+      for (var i = 0; i < teeth; i++) {
+        var a = i * dTheta;
+        pts.push([Math.round(innerRadius * Math.cos(a) * 10) / 10, Math.round(innerRadius * Math.sin(a) * 10) / 10]);
+        var aTip = a + dTheta * 0.25;
+        pts.push([Math.round(outerRadius * Math.cos(aTip) * 10) / 10, Math.round(outerRadius * Math.sin(aTip) * 10) / 10]);
+        var aGullet = a + dTheta * 0.35;
+        pts.push([Math.round(innerRadius * Math.cos(aGullet) * 10) / 10, Math.round(innerRadius * Math.sin(aGullet) * 10) / 10]);
+      }
+      return pts;
     },
 
     /**
@@ -311,6 +338,10 @@
       options = options || {};
       if (profileType === 'custom' && options.points && options.points.length >= 3) {
         return options.points;
+      }
+      if (profileType === 'escapement' || profileType === 'ratchet') {
+        var eTeeth = options.teeth || 8;
+        return Math2D.getEscapeWheelPoints(eTeeth, baseRadius + lift, baseRadius);
       }
       if (profileType === 'geneva') {
         var gSlots = options.slots || 4;

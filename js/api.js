@@ -488,6 +488,18 @@
         return (editor.labels || []).map(function(lb) {
           return { x: lb.x, y: lb.y, text: lb.text, fontSize: lb.fontSize, color: lb.color, bold: lb.bold };
         });
+      },
+
+      // Rotate a slider rail to specified angle in degrees around its midpoint
+      rotateSliderRail: function(sliderIdx, angleDeg, railLength) {
+        if (!editor) return;
+        editor.rotateSliderRail(sliderIdx, angleDeg, railLength);
+      },
+
+      // Add a connection pin attached to a moving target (gear, pulley, cam, geneva)
+      createPinOnTarget: function(elem, wx, wy) {
+        if (!editor) return -1;
+        return editor.createPinOnTarget(elem, wx, wy);
       }
     };
 

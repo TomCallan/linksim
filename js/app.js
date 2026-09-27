@@ -95,6 +95,16 @@
     // Default to Simulate mode running
     setMode('simulate');
 
+    // Prevent native browser context menu on the canvas
+    var mainCanvas = document.getElementById('maincanvas');
+    if (mainCanvas) {
+      mainCanvas.addEventListener('contextmenu', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      });
+    }
+
     // Start requestAnimationFrame loop
     requestAnimationFrame(loop);
   }
@@ -197,7 +207,7 @@
       for (var gi = 0; gi < model.genevas.length; gi++) {
         var gen = model.genevas[gi];
         physics.addGeneva(gen.driverCenterNode, gen.driverPinNode, gen.genevaCenterNode, gen.slots, {
-          initialAngle: gen.angle || 0,
+          initialAngle: gen.angle !== undefined ? gen.angle : 0,
           slotWidth: gen.slotWidth
         });
       }
@@ -441,14 +451,19 @@
       });
     }
 
+    var lastUIUpdateFrame = -1;
     timeline.onFrameChanged = function(curr, total, isPlaying) {
-      timeSlider.max = Math.max(0, total - 1);
-      timeSlider.value = curr;
-      if (frameInfo) {
-        frameInfo.textContent = 'Frame: ' + (curr + 1) + ' / ' + total;
+      if (!isPlaying || Math.abs(curr - lastUIUpdateFrame) >= 2 || curr === 0 || curr === total - 1) {
+        lastUIUpdateFrame = curr;
+        timeSlider.max = Math.max(0, total - 1);
+        timeSlider.value = curr;
+        if (frameInfo) {
+          frameInfo.textContent = 'Frame: ' + (curr + 1) + ' / ' + total;
+        }
       }
       if (btnPlay) {
-        btnPlay.textContent = isPlaying ? 'Pause' : 'Play';
+        var txt = isPlaying ? 'Pause' : 'Play';
+        if (btnPlay.textContent !== txt) btnPlay.textContent = txt;
       }
     };
   }
@@ -482,6 +497,8 @@
         selectTool('add_motor');
       } else if (e.key === 't' || e.key === 'T') {
         selectTool('add_label');
+      } else if (e.key === 'd' || e.key === 'D') {
+        selectTool('draw_shape');
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         if (editor.selection) {
           editor.deleteSelection();
@@ -675,19 +692,27 @@
         action: function() { openInspector('slider', targetData); }
       });
       innerItems.push({
+        label: 'Horiz (0°)',
+        action: function() { editor.rotateSliderRail(slIdx, 0); }
+      });
+      innerItems.push({
+        label: 'Vert (90°)',
+        action: function() { editor.rotateSliderRail(slIdx, 90); }
+      });
+      innerItems.push({
+        label: 'Rot +45°',
+        action: function() {
+          var na = editor.getNodeById(sl.aNode), nb = editor.getNodeById(sl.bNode);
+          var curDeg = (na && nb) ? Math.round(Math.atan2(nb.y - na.y, nb.x - na.x) * 180 / Math.PI) : 0;
+          editor.rotateSliderRail(slIdx, curDeg + 45);
+        }
+      });
+      innerItems.push({
         label: 'Free Travel',
         action: function() {
           editor.saveState();
           sl.minT = undefined;
           sl.maxT = undefined;
-          editor._notifyChange();
-        }
-      });
-      innerItems.push({
-        label: (sl.friction && sl.friction > 0) ? 'No Friction' : 'Add Friction',
-        action: function() {
-          editor.saveState();
-          sl.friction = (sl.friction && sl.friction > 0) ? 0 : 0.1;
           editor._notifyChange();
         }
       });
@@ -703,6 +728,10 @@
       innerItems.push({
         label: 'Props',
         action: function() { openInspector('gear', targetData); }
+      });
+      innerItems.push({
+        label: 'Add Pin Here',
+        action: function() { editor.createPinOnTarget(targetData, editor.mouseWorldX, editor.mouseWorldY); }
       });
       innerItems.push({
         label: 'Crankpin',
@@ -759,6 +788,10 @@
         action: function() { openInspector('pulley', targetData); }
       });
       innerItems.push({
+        label: 'Add Pin Here',
+        action: function() { editor.createPinOnTarget(targetData, editor.mouseWorldX, editor.mouseWorldY); }
+      });
+      innerItems.push({
         label: 'Drive Motor',
         action: function() { editor.addMotor(pItem.nodeId, pItem.nodeId, 3.0); }
       });
@@ -774,6 +807,10 @@
       innerItems.push({
         label: 'Props',
         action: function() { openInspector('cam', targetData); }
+      });
+      innerItems.push({
+        label: 'Add Pin Here',
+        action: function() { editor.createPinOnTarget(targetData, editor.mouseWorldX, editor.mouseWorldY); }
       });
       innerItems.push({
         label: 'Vector Cam',
@@ -811,6 +848,10 @@
       innerItems.push({
         label: 'Props',
         action: function() { openInspector('geneva', targetData); }
+      });
+      innerItems.push({
+        label: 'Add Pin Here',
+        action: function() { editor.createPinOnTarget(targetData, editor.mouseWorldX, editor.mouseWorldY); }
       });
       innerItems.push({
         label: 'Delete',
@@ -1077,14 +1118,34 @@
       titleEl.textContent = 'Configure Linear Slider Rail';
       var hasMin = (sl.minT !== undefined && sl.minT !== null && isFinite(sl.minT));
       var hasMax = (sl.maxT !== undefined && sl.maxT !== null && isFinite(sl.maxT));
+      var na = editor.getNodeById(sl.aNode), nb = editor.getNodeById(sl.bNode);
+      var curAngleDeg = (na && nb) ? Math.round(Math.atan2(nb.y - na.y, nb.x - na.x) * 180 / Math.PI) : 0;
       bodyEl.innerHTML = 
+        '<div class="form-group"><label>Rail Orientation Angle (°)</label>' +
+        '<div style="display:flex; gap:6px; align-items:center; margin-top:4px;">' +
+        '<input type="number" id="insRailAngle" value="' + curAngleDeg + '" step="5" style="width:75px;">' +
+        '<button type="button" id="btnAngleHoriz" style="padding:2px 7px; font-size:0.75rem;">0° Horiz</button>' +
+        '<button type="button" id="btnAngleVert" style="padding:2px 7px; font-size:0.75rem;">90° Vert</button>' +
+        '<button type="button" id="btnAngle45" style="padding:2px 7px; font-size:0.75rem;">45°</button>' +
+        '<button type="button" id="btnAngleM45" style="padding:2px 7px; font-size:0.75rem;">-45°</button>' +
+        '</div></div>' +
         '<div class="form-group"><label><input type="checkbox" id="insEnableStroke" ' + (hasMin || hasMax ? 'checked' : '') + '> Enforce End-Stop Travel Limits</label></div>' +
         '<div class="form-group"><label>Min Travel Limit</label><input type="number" id="insMinT" value="' + (hasMin ? sl.minT : -100) + '" step="5"></div>' +
         '<div class="form-group"><label>Max Travel Limit</label><input type="number" id="insMaxT" value="' + (hasMax ? sl.maxT : 100) + '" step="5"></div>' +
         '<div class="form-group"><label>Friction Coefficient</label><input type="number" id="insFric" value="' + (sl.friction || 0) + '" step="0.05" min="0"></div>';
 
+      var angleInput = document.getElementById('insRailAngle');
+      document.getElementById('btnAngleHoriz').onclick = function() { angleInput.value = 0; };
+      document.getElementById('btnAngleVert').onclick = function() { angleInput.value = 90; };
+      document.getElementById('btnAngle45').onclick = function() { angleInput.value = 45; };
+      document.getElementById('btnAngleM45').onclick = function() { angleInput.value = -45; };
+
       saveHandler = function() {
         editor.saveState();
+        var newAngle = parseFloat(angleInput.value);
+        if (!isNaN(newAngle) && newAngle !== curAngleDeg) {
+          editor.rotateSliderRail(data.index, newAngle);
+        }
         var enableStroke = document.getElementById('insEnableStroke').checked;
         if (enableStroke) {
           sl.minT = parseFloat(document.getElementById('insMinT').value) || -100;
@@ -1339,7 +1400,12 @@
     };
   }
 
+  var lastFrameTime = 0;
+  var physicsAccumulator = 0;
+  var FIXED_TIMESTEP = 1 / 60;
+
   function loop(timestamp) {
+    if (!lastFrameTime) lastFrameTime = timestamp;
     var dt = (timestamp - lastFrameTime) / 1000;
     lastFrameTime = timestamp;
 
@@ -1358,7 +1424,12 @@
 
     // Step physics & timeline if in simulate mode
     if (editor.mode === 'simulate') {
-      timeline.update(dt);
+      physicsAccumulator += dt;
+      if (physicsAccumulator > 0.1) physicsAccumulator = 0.1;
+      while (physicsAccumulator >= FIXED_TIMESTEP) {
+        timeline.update(FIXED_TIMESTEP);
+        physicsAccumulator -= FIXED_TIMESTEP;
+      }
 
       // Record motion trace
       if (physics.numNodes > 0 && timeline.isPlaying) {

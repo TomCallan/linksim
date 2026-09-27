@@ -553,4 +553,162 @@ console.log('Running Linksim Programmatic API & Materials Test Suite...');
   console.log('PASS: Direct element placement without prior nodes and slider assembly creation');
 }
 
+// Test 16: Custom vector geometry drawing & finishCustomShape
+{
+  const createMockCtx = () => ({
+    clearRect: () => {},
+    beginPath: () => {},
+    arc: () => {},
+    moveTo: () => {},
+    lineTo: () => {},
+    stroke: () => {},
+    fill: () => {},
+    closePath: () => {},
+    save: () => {},
+    restore: () => {},
+    translate: () => {},
+    rotate: () => {},
+    scale: () => {},
+    strokeRect: () => {},
+    fillRect: () => {},
+    fillText: () => {},
+    setLineDash: () => {},
+    measureText: () => ({ width: 10 })
+  });
+
+  const mockCanvas = {
+    getContext: createMockCtx,
+    width: 800,
+    height: 600,
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }),
+    addEventListener: () => {}
+  };
+
+  const editor = new MechanismEditor(mockCanvas);
+  editor.setTool('draw_shape');
+  // Add 4 vertices for a diamond shape
+  editor.shapeVertices.push({ x: 100, y: 50 });
+  editor.shapeVertices.push({ x: 150, y: 100 });
+  editor.shapeVertices.push({ x: 100, y: 150 });
+  editor.shapeVertices.push({ x: 50, y: 100 });
+
+  editor.finishCustomShape();
+
+  assert.strictEqual(editor.cams.length, 1, 'Custom cam not created');
+  assert.strictEqual(editor.cams[0].profileType, 'custom');
+  assert.strictEqual(editor.cams[0].options.points.length, 4);
+  assert.strictEqual(editor.shapeVertices.length, 0, 'shapeVertices not cleared');
+  assert.strictEqual(editor.activeTool, 'select', 'Tool not reverted to select');
+
+  console.log('PASS: Custom vector geometry drawing & finishCustomShape');
+}
+
+// Test 17: Slider rail orientation angle rotation (horizontal, vertical, arbitrary)
+{
+  const createMockCtx = () => ({
+    clearRect: () => {},
+    beginPath: () => {},
+    arc: () => {},
+    moveTo: () => {},
+    lineTo: () => {},
+    stroke: () => {},
+    fill: () => {},
+    closePath: () => {},
+    save: () => {},
+    restore: () => {},
+    translate: () => {},
+    rotate: () => {},
+    scale: () => {},
+    strokeRect: () => {},
+    fillRect: () => {},
+    fillText: () => {},
+    setLineDash: () => {},
+    measureText: () => ({ width: 10 })
+  });
+
+  const mockCanvas = {
+    getContext: createMockCtx,
+    width: 800,
+    height: 600,
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }),
+    addEventListener: () => {}
+  };
+
+  const editor = new MechanismEditor(mockCanvas);
+  const a = editor.addNode(0, 0, true);
+  const b = editor.addNode(100, 0, true);
+  const s = editor.addNode(50, 0, false);
+  editor.addSlider(s, a, b);
+
+  // Rotate to 90 degrees (vertical)
+  editor.rotateSliderRail(0, 90, 100);
+  const na = editor.getNodeById(a);
+  const nb = editor.getNodeById(b);
+  const ns = editor.getNodeById(s);
+
+  // Midpoint was (50, 0). Vertical length 100 means na.y=-50, nb.y=50, x=50
+  assert(Math.abs(na.x - 50) < 1e-4, `Expected na.x=50, got ${na.x}`);
+  assert(Math.abs(nb.x - 50) < 1e-4, `Expected nb.x=50, got ${nb.x}`);
+  assert(Math.abs(na.y - (-50)) < 1e-4, `Expected na.y=-50, got ${na.y}`);
+  assert(Math.abs(nb.y - 50) < 1e-4, `Expected nb.y=50, got ${nb.y}`);
+  assert(Math.abs(ns.x - 50) < 1e-4, `Carriage not projected to rail x=50: got ${ns.x}`);
+
+  console.log('PASS: Slider rail orientation angle rotation');
+}
+
+// Test 18: Moving targets connection point attachment
+{
+  const createMockCtx = () => ({
+    clearRect: () => {},
+    beginPath: () => {},
+    arc: () => {},
+    moveTo: () => {},
+    lineTo: () => {},
+    stroke: () => {},
+    fill: () => {},
+    closePath: () => {},
+    save: () => {},
+    restore: () => {},
+    translate: () => {},
+    rotate: () => {},
+    scale: () => {},
+    strokeRect: () => {},
+    fillRect: () => {},
+    fillText: () => {},
+    setLineDash: () => {},
+    measureText: () => ({ width: 10 })
+  });
+
+  const mockCanvas = {
+    getContext: createMockCtx,
+    width: 800,
+    height: 600,
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }),
+    addEventListener: () => {}
+  };
+
+  const editor = new MechanismEditor(mockCanvas);
+  const gc = editor.addNode(0, 0, true);
+  editor.addGear(gc, 50, 20);
+
+  // Create connection pin on gear at (30, 0)
+  const pinId = editor.createPinOnTarget({ type: 'gear', index: 0 }, 30, 0);
+  assert(pinId !== -1, 'createPinOnTarget failed');
+  const pNode = editor.getNodeById(pinId);
+  assert(pNode.parentGear !== undefined, 'Node missing parentGear');
+  assert.strictEqual(pNode.parentGear.gearIdx, 0);
+  assert(Math.abs(pNode.parentGear.radius - 30) < 1e-4);
+
+  // Create connection pin on pulley
+  const pc = editor.addNode(100, 0, true);
+  editor.addPulley(pc, 40);
+  const pulPinId = editor.createPinOnTarget({ type: 'pulley', index: 0 }, 125, 0);
+  const pulPinNode = editor.getNodeById(pulPinId);
+  assert(pulPinNode.parentPulley !== undefined, 'Node missing parentPulley');
+  assert.strictEqual(pulPinNode.parentPulley.pulleyIdx, 0);
+  assert(Math.abs(pulPinNode.parentPulley.radius - 25) < 1e-4);
+
+  console.log('PASS: Moving targets connection point attachment');
+}
+
 console.log('All API & Material tests passed successfully!');

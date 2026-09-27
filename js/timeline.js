@@ -153,11 +153,15 @@
     }
     if (!isMoving) return;
 
+    // Throttle loop check to every 4 frames to keep CPU at near-zero overhead
+    if (k % 4 !== 0) return;
+
     var minPeriod = 20;
     var tolerance = 1.2; // Maximum node position displacement in pixels
 
-    // Compare newest frame k with earlier frames j starting from minSearch
-    for (var j = minSearch; j <= k - minPeriod; j++) {
+    // Search backwards from most recent candidate: real loops match the shortest recent period first!
+    var searchFloor = Math.max(minSearch, k - 400);
+    for (var j = k - minPeriod; j >= searchFloor; j--) {
       var sj = this.history[j];
       if (sj.numNodes !== numNodes) continue;
 
