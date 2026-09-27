@@ -182,4 +182,58 @@ console.log('Running Linksim Programmatic API & Materials Test Suite...');
   console.log('PASS: Geneva mechanism declarative API building and telemetry');
 }
 
+// Test 8: Declarative Power Transmission & Cam API
+{
+  const api = LinksimAPI.init(null, new PhysicsSystem(), null, null);
+  api.build({
+    nodes: [
+      { id: 0, x: -100, y: 0, fixed: true },
+      { id: 1, x: 0, y: 0, fixed: true },
+      { id: 2, x: 0, y: 50, fixed: false },
+      { id: 3, x: 0, y: 10, fixed: true },
+      { id: 4, x: 0, y: 120, fixed: true }
+    ],
+    pulleys: [
+      { nodeId: 0, radius: 25 },
+      { nodeId: 1, radius: 50 }
+    ],
+    belts: [
+      { pulleyA: 0, pulleyB: 1, crossed: false }
+    ],
+    cams: [
+      { centerNode: 1, profileType: 'pear', baseRadius: 35, lift: 25 }
+    ],
+    camContacts: [
+      { camIdx: 0, followerNode: 2, rollerRadius: 8 }
+    ],
+    axles: [
+      { targetA: { type: 'pulley', index: 1 }, targetB: { type: 'cam', index: 0 }, ratio: 1.0 }
+    ],
+    sliders: [
+      { node: 2, aNode: 3, bNode: 4, minT: 20, maxT: 90 }
+    ],
+    motors: [
+      { centerNode: 0, crankNode: 0, speed: 4.0 }
+    ]
+  });
+
+  const state = api.getState();
+  assert.strictEqual(state.pulleys.length, 2, 'Pulleys count mismatch');
+  assert.strictEqual(state.belts.length, 1, 'Belts count mismatch');
+  assert.strictEqual(state.cams.length, 1, 'Cams count mismatch');
+  assert.strictEqual(state.camContacts.length, 1, 'CamContacts count mismatch');
+  assert.strictEqual(state.axles.length, 1, 'Axles count mismatch');
+
+  // Step simulation: motor turns pulley 0 -> belt turns pulley 1 -> axle turns cam -> cam lifts follower!
+  api.step(0.5);
+
+  const stateAfter = api.getState();
+  assert(stateAfter.pulleys[0].angle > 0, 'Driver pulley did not rotate');
+  assert(stateAfter.pulleys[1].angle > 0, 'Driven pulley did not rotate via belt');
+  assert(stateAfter.cams[0].angle > 0, 'Cam did not rotate via axle');
+  assert(stateAfter.nodes[2].y > 50, 'Follower node was not pushed by cam contact');
+
+  console.log('PASS: Declarative Cams, Belts, Pulleys, and Axles building and telemetry via LinksimAPI');
+}
+
 console.log('All API & Material tests passed successfully!');

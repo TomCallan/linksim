@@ -227,4 +227,119 @@ console.log('Running Linksim Physics & Timeline Test Suite...');
   console.log('PASS: Geneva mechanism intermittent 90-degree indexing & dwell phase');
 }
 
+// Test 11: Physical Cam-Follower Contact Simulation
+{
+  const sim = new PhysicsSystem();
+  // Cam center at (0, 0), Follower starts above cam at (0, 38)
+  const camCenter = sim.addNode(0, 0, true);
+  const folNode = sim.addNode(0, 38, false, 1.0);
+  const guideA = sim.addNode(0, 10, true);
+  const guideB = sim.addNode(0, 120, true);
+
+  // Vertical slider rail for follower
+  sim.addSlider(folNode, guideA, guideB, 20, 100);
+
+  // Pear cam: baseRadius 30, lift 20, apex at 0 rad. Follower roller radius 8
+  const cam = sim.addCam(camCenter, 'pear', 30, 20, { lobeAngle: 60 });
+  const contact = sim.addCamContact(0, folNode, 8);
+
+  // Gravity pulls follower downward onto cam
+  sim.gravityY = 500;
+
+  // Motor drives cam at 3.0 rad/s
+  sim.addMotor(camCenter, camCenter, 3.0);
+
+  // 1. Initial position check: at angle 0, lobe apex is pointing along +x axis (0 rad).
+  // Follower is at angle +pi/2 (90 deg) relative to cam center, which is in the dwell base circle (baseRadius = 30)
+  // Distance should be baseRadius + rollerRadius = 30 + 8 = 38
+  sim.step(1 / 60);
+  assert(Math.abs(sim.y[folNode] - 38) < 0.5, `Follower not at base circle: expected 38, got ${sim.y[folNode]}`);
+
+  // 2. Rotate cam so apex aligns with follower at +pi/2 (quarter turn = pi / (2 * 3.0) s = 0.5236s -> ~32 frames)
+  let maxLift = 0;
+  for (let f = 0; f < 35; f++) {
+    sim.step(1 / 60);
+    if (sim.y[folNode] > maxLift) maxLift = sim.y[folNode];
+  }
+
+  // Peak lift should reach baseRadius + lift + rollerRadius = 30 + 20 + 8 = 58
+  assert(maxLift >= 57.5, `Cam did not physically push follower to peak lift: expected >= 57.5, got ${maxLift}`);
+  assert(contact.normalForce >= 0, 'Cam contact normal force should be positive');
+
+  console.log('PASS: Physical cam-follower XPBD contact & lift transmission');
+}
+
+// Test 12: Belts & Pulleys Speed Reduction & Rotation Reversal
+{
+  const sim = new PhysicsSystem();
+  const n0 = sim.addNode(0, 0, true);
+  const n1 = sim.addNode(100, 0, true);
+  const n2 = sim.addNode(200, 0, true);
+  const n3 = sim.addNode(300, 0, true);
+
+  // Open belt: Pulley 0 (r=20) to Pulley 1 (r=40) -> 2:1 reduction, same direction
+  const p0 = sim.addPulley(n0, 20);
+  const p1 = sim.addPulley(n1, 40);
+  sim.addBelt(0, 1, { crossed: false });
+
+  // Crossed belt: Pulley 2 (r=30) to Pulley 3 (r=30) -> 1:1, opposite direction
+  const p2 = sim.addPulley(n2, 30);
+  const p3 = sim.addPulley(n3, 30);
+  sim.addBelt(2, 3, { crossed: true });
+
+  // Motor drives Pulley 0 at 4.0 rad/s and Pulley 2 at 2.0 rad/s
+  sim.addMotor(n0, n0, 4.0);
+  sim.addMotor(n2, n2, 2.0);
+
+  sim.step(1.0); // 1 second
+
+  // Open belt check: p1 should have rotated by 4.0 * 1.0 * (20 / 40) = 2.0 rad
+  assert(Math.abs(p1.angle - 2.0) < 0.05, `Open belt speed error: expected 2.0, got ${p1.angle}`);
+
+  // Crossed belt check: p3 should have rotated by 2.0 * 1.0 * (-1.0) = -2.0 rad
+  assert(Math.abs(p3.angle - (-2.0)) < 0.05, `Crossed belt reversal error: expected -2.0, got ${p3.angle}`);
+
+  console.log('PASS: Belts & Pulleys velocity ratio & crossed belt reversal');
+}
+
+// Test 13: Axles & Compound Power Transmission (Motor -> Pulley -> Belt -> Pulley -> Axle -> Gear -> Meshed Gear)
+{
+  const sim = new PhysicsSystem();
+  const nDriver = sim.addNode(-100, 0, true);
+  const nJackshaft = sim.addNode(0, 0, true);
+  const nDriven = sim.addNode(60, 0, true);
+
+  // Motor on driver
+  sim.addMotor(nDriver, nDriver, 4.0);
+
+  // Pulley 0 on driver (r=20)
+  sim.addPulley(nDriver, 20);
+  // Pulley 1 on jackshaft (r=40)
+  sim.addPulley(nJackshaft, 40);
+  // Belt between them
+  sim.addBelt(0, 1);
+
+  // Gear 0 on jackshaft (r=25, 10 teeth)
+  sim.addGear(nJackshaft, 25, 10);
+  // Gear 1 on driven (r=35, 14 teeth)
+  sim.addGear(nDriven, 35, 14);
+  sim.connectGears(0, 1);
+
+  // Axle couples Pulley 1 and Gear 0 on the shared jackshaft pin!
+  sim.addAxle({ type: 'pulley', index: 1 }, { type: 'gear', index: 0 }, { ratio: 1.0 });
+
+  sim.step(1.0);
+
+  // Pulley 1 should rotate at 4.0 * (20 / 40) = 2.0 rad
+  assert(Math.abs(sim.pulleys[1].angle - 2.0) < 0.05, `Jackshaft pulley angle error: expected 2.0, got ${sim.pulleys[1].angle}`);
+
+  // Gear 0 on same axle must match Pulley 1 rotation exactly!
+  assert(Math.abs(sim.gears[0].angle - 2.0) < 0.05, `Axle torque transfer error: expected 2.0, got ${sim.gears[0].angle}`);
+
+  // Gear 1 meshed with Gear 0 must be driven by gear ratio!
+  assert(sim.gears[1].angle !== 0, 'Driven gear was not rotated through compound transmission');
+
+  console.log('PASS: Axles & Compound Power Transmission (Pulley -> Belt -> Axle -> Gear train)');
+}
+
 console.log('All tests passed successfully!');

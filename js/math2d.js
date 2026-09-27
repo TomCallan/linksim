@@ -95,6 +95,119 @@
       var relAngle1 = angle1 - phi;
       var targetAngle2 = ratio * relAngle1 + (phi + Math.PI) + (pitch2 * 0.5);
       return Math2D.normalizeAngle(targetAngle2);
+    },
+
+    /**
+     * Compute common external (open belt) or internal (crossed belt) tangents between two circles.
+     * Returns { p1a: [x,y], p2a: [x,y], p1b: [x,y], p2b: [x,y], arc1Start, arc1End, arc2Start, arc2End }
+     */
+    circleTangents: function(c1x, c1y, r1, c2x, c2y, r2, crossed) {
+      var dx = c2x - c1x;
+      var dy = c2y - c1y;
+      var d = Math.hypot(dx, dy);
+      if (d < 1e-6) return null;
+
+      var centerAngle = Math.atan2(dy, dx);
+
+      if (!crossed) {
+        // Open belt: external tangents
+        var dr = r1 - r2;
+        if (d <= Math.abs(dr)) return null; // One circle inside other
+
+        var beta = Math.acos(dr / d);
+        var a1 = centerAngle + beta;
+        var a2 = centerAngle - beta;
+
+        return {
+          p1a: [c1x + r1 * Math.cos(a1), c1y + r1 * Math.sin(a1)],
+          p2a: [c2x + r2 * Math.cos(a1), c2y + r2 * Math.sin(a1)],
+          p1b: [c1x + r1 * Math.cos(a2), c1y + r1 * Math.sin(a2)],
+          p2b: [c2x + r2 * Math.cos(a2), c2y + r2 * Math.sin(a2)],
+          a1: a1,
+          a2: a2,
+          crossed: false
+        };
+      } else {
+        // Crossed belt: internal tangents
+        var sr = r1 + r2;
+        if (d <= sr) return null; // Overlapping circles
+
+        var beta = Math.acos(sr / d);
+        var a1 = centerAngle + beta;
+        var a2 = centerAngle - beta;
+
+        return {
+          p1a: [c1x + r1 * Math.cos(a1), c1y + r1 * Math.sin(a1)],
+          p2a: [c2x + r2 * Math.cos(a1 + Math.PI), c2y + r2 * Math.sin(a1 + Math.PI)],
+          p1b: [c1x + r1 * Math.cos(a2), c1y + r1 * Math.sin(a2)],
+          p2b: [c2x + r2 * Math.cos(a2 - Math.PI), c2y + r2 * Math.sin(a2 - Math.PI)],
+          a1: a1,
+          a2: a2,
+          crossed: true
+        };
+      }
+    },
+
+    /**
+     * Compute cam profile radius at local angle theta (radians, 0 = apex).
+     */
+    getCamRadius: function(profileType, theta, baseRadius, lift, options) {
+      theta = Math2D.normalizeAngle(theta);
+      baseRadius = baseRadius || 30;
+      lift = lift || 20;
+      options = options || {};
+
+      switch (profileType) {
+        case 'eccentric':
+          var e = lift * 0.5;
+          var R = baseRadius + e;
+          var sinT = Math.sin(theta);
+          var discr = R * R - e * e * sinT * sinT;
+          return e * Math.cos(theta) + Math.sqrt(Math.max(0, discr));
+
+        case 'pear':
+          // Standard engineering teardrop / valve cam
+          // Lobe span is typically 120 degrees (+/- 60 degrees from apex)
+          var lobeHalf = (options.lobeAngle || 65) * (Math.PI / 180);
+          var absT = Math.abs(theta);
+          if (absT >= lobeHalf) {
+            return baseRadius;
+          }
+          // Cycloidal harmonic rise
+          var u = absT / lobeHalf;
+          var lobeProfile = 0.5 * (1 + Math.cos(Math.PI * u));
+          return baseRadius + lift * lobeProfile;
+
+        case 'snail':
+          // Archimedean spiral with sudden drop at theta = 0 / 2pi
+          var phi = theta;
+          if (phi < 0) phi += Math.PI * 2;
+          return baseRadius + lift * (phi / (Math.PI * 2));
+
+        case 'heart':
+          // Uniform velocity cardioid cam
+          var absT2 = Math.abs(theta);
+          return baseRadius + lift * (1.0 - absT2 / Math.PI);
+
+        case 'circle':
+        default:
+          return baseRadius;
+      }
+    },
+
+    /**
+     * Generate 2D contour points of a cam profile in local coordinates.
+     */
+    getCamPoints: function(profileType, baseRadius, lift, numPoints, options) {
+      numPoints = numPoints || 72;
+      var pts = [];
+      var dTheta = (Math.PI * 2) / numPoints;
+      for (var i = 0; i < numPoints; i++) {
+        var a = i * dTheta - Math.PI;
+        var r = Math2D.getCamRadius(profileType, a, baseRadius, lift, options);
+        pts.push([r * Math.cos(a), r * Math.sin(a)]);
+      }
+      return pts;
     }
   };
 

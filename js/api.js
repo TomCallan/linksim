@@ -66,6 +66,36 @@
               });
             }
           }
+          if (spec.pulleys) {
+            for (var pi = 0; pi < spec.pulleys.length; pi++) {
+              var pul = spec.pulleys[pi];
+              physics.addPulley(pul.nodeId, pul.radius, pul);
+            }
+          }
+          if (spec.belts) {
+            for (var bi = 0; bi < spec.belts.length; bi++) {
+              var blt = spec.belts[bi];
+              physics.addBelt(blt.pulleyA, blt.pulleyB, blt);
+            }
+          }
+          if (spec.cams) {
+            for (var ci = 0; ci < spec.cams.length; ci++) {
+              var cam = spec.cams[ci];
+              physics.addCam(cam.centerNode, cam.profileType, cam.baseRadius, cam.lift, cam.options);
+            }
+          }
+          if (spec.camContacts) {
+            for (var cci = 0; cci < spec.camContacts.length; cci++) {
+              var cc = spec.camContacts[cci];
+              physics.addCamContact(cc.camIdx, cc.followerNode, cc.rollerRadius, cc);
+            }
+          }
+          if (spec.axles) {
+            for (var axi = 0; axi < spec.axles.length; axi++) {
+              var ax = spec.axles[axi];
+              physics.addAxle(ax.targetA, ax.targetB, ax);
+            }
+          }
           if (spec.motors) {
             for (var m = 0; m < spec.motors.length; m++) {
               var mot = spec.motors[m];
@@ -143,6 +173,58 @@
         }
       },
 
+      addPulley: function(nodeId, radius, options) {
+        if (editor) return editor.addPulley(nodeId, radius, options);
+        if (physics) return physics.addPulley(nodeId, radius, options);
+        return null;
+      },
+
+      addBelt: function(pulleyA, pulleyB, options) {
+        if (editor) return editor.addBelt(pulleyA, pulleyB, options);
+        if (physics) return physics.addBelt(pulleyA, pulleyB, options);
+        return null;
+      },
+
+      addAxle: function(targetA, targetB, options) {
+        if (editor) return editor.addAxle(targetA, targetB, options);
+        if (physics) return physics.addAxle(targetA, targetB, options);
+        return null;
+      },
+
+      addCam: function(centerNode, profileType, baseRadius, lift, options) {
+        if (editor) return editor.addCam(centerNode, profileType, baseRadius, lift, options);
+        if (physics) return physics.addCam(centerNode, profileType, baseRadius, lift, options);
+        return null;
+      },
+
+      addCamContact: function(camIdx, followerNode, rollerRadius, options) {
+        if (editor) return editor.addCamContact(camIdx, followerNode, rollerRadius);
+        if (physics) return physics.addCamContact(camIdx, followerNode, rollerRadius, options);
+        return null;
+      },
+
+      attachNodeToPulley: function(nodeId, pulleyIdx, radius, angleOffset) {
+        if (physics) physics.attachNodeToPulley(nodeId, pulleyIdx, radius, angleOffset);
+        if (editor) {
+          var n = editor.getNodeById(nodeId);
+          if (n) {
+            n.parentPulley = { pulleyIdx: pulleyIdx, radius: radius, angleOffset: angleOffset };
+            editor._notifyChange();
+          }
+        }
+      },
+
+      attachNodeToCam: function(nodeId, camIdx, radius, angleOffset) {
+        if (physics) physics.attachNodeToCam(nodeId, camIdx, radius, angleOffset);
+        if (editor) {
+          var n = editor.getNodeById(nodeId);
+          if (n) {
+            n.parentCam = { camIdx: camIdx, radius: radius, angleOffset: angleOffset };
+            editor._notifyChange();
+          }
+        }
+      },
+
       setGravity: function(gx, gy) {
         if (physics) {
           physics.gravityX = gx;
@@ -211,13 +293,33 @@
             isEngaged: gen.isEngaged
           };
         });
+        var pulleys = physics.pulleys.map(function(p) {
+          return { nodeId: p.nodeId, radius: p.radius, angle: p.angle, angularVelocity: p.angularVelocity };
+        });
+        var belts = physics.belts.map(function(b) {
+          return { pulleyA: b.pulleyA, pulleyB: b.pulleyB, crossed: b.crossed, width: b.width };
+        });
+        var cams = physics.cams.map(function(c) {
+          return { centerNode: c.centerNode, profileType: c.profileType, baseRadius: c.baseRadius, lift: c.lift, angle: c.angle };
+        });
+        var camContacts = physics.camContacts.map(function(cc) {
+          return { camIdx: cc.camIdx, followerNode: cc.followerNode, rollerRadius: cc.rollerRadius, normalForce: cc.normalForce };
+        });
+        var axles = physics.axles.map(function(ax) {
+          return { targetA: ax.targetA, targetB: ax.targetB, ratio: ax.ratio };
+        });
         return {
           time: physics.time,
           nodes: nodes,
           rods: rods,
           gears: gears,
           motors: motors,
-          genevas: genevas
+          genevas: genevas,
+          pulleys: pulleys,
+          belts: belts,
+          cams: cams,
+          camContacts: camContacts,
+          axles: axles
         };
       },
 

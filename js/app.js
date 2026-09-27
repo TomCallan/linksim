@@ -176,7 +176,43 @@
       }
     }
 
-    // 6. Connect parented nodes to gears and Geneva wheels
+    // 5.6 Add Pulleys & Belts
+    if (model.pulleys) {
+      for (var pi = 0; pi < model.pulleys.length; pi++) {
+        var pul = model.pulleys[pi];
+        physics.addPulley(pul.nodeId, pul.radius, pul);
+      }
+    }
+    if (model.belts) {
+      for (var bi = 0; bi < model.belts.length; bi++) {
+        var blt = model.belts[bi];
+        physics.addBelt(blt.pulleyA, blt.pulleyB, blt);
+      }
+    }
+
+    // 5.7 Add Cams & Follower Contacts
+    if (model.cams) {
+      for (var ci = 0; ci < model.cams.length; ci++) {
+        var cam = model.cams[ci];
+        physics.addCam(cam.centerNode, cam.profileType, cam.baseRadius, cam.lift, cam.options);
+      }
+    }
+    if (model.camContacts) {
+      for (var cci = 0; cci < model.camContacts.length; cci++) {
+        var cc = model.camContacts[cci];
+        physics.addCamContact(cc.camIdx, cc.followerNode, cc.rollerRadius, cc);
+      }
+    }
+
+    // 5.8 Add Axles
+    if (model.axles) {
+      for (var axi = 0; axi < model.axles.length; axi++) {
+        var ax = model.axles[axi];
+        physics.addAxle(ax.targetA, ax.targetB, ax);
+      }
+    }
+
+    // 6. Connect parented nodes to gears, Geneva wheels, pulleys, and cams
     for (var i = 0; i < model.nodes.length; i++) {
       var n = model.nodes[i];
       if (n.parentGear) {
@@ -184,6 +220,12 @@
       }
       if (n.parentGeneva) {
         physics.attachNodeToGeneva(n.id, n.parentGeneva.genevaIdx, n.parentGeneva.radius, n.parentGeneva.angleOffset);
+      }
+      if (n.parentPulley) {
+        physics.attachNodeToPulley(n.id, n.parentPulley.pulleyIdx, n.parentPulley.radius, n.parentPulley.angleOffset);
+      }
+      if (n.parentCam) {
+        physics.attachNodeToCam(n.id, n.parentCam.camIdx, n.parentCam.radius, n.parentCam.angleOffset);
       }
     }
 
@@ -447,6 +489,21 @@
           action: function() { editor.attachNodeToGear(n.id, nearGear); }
         });
       }
+      var nearPulley = editor.findPulleyNear(n.x, n.y);
+      if (nearPulley !== -1) {
+        items.push({
+          label: 'Lock Node on Pulley ' + nearPulley,
+          action: function() { editor.attachNodeToPulley(n.id, nearPulley); }
+        });
+      }
+      items.push({
+        label: 'Mount Cam Profile Here (Pear Cam)',
+        action: function() { editor.addCam(n.id, 'pear', 35, 25); }
+      });
+      items.push({
+        label: 'Mount Pulley Wheel Here',
+        action: function() { editor.addPulley(n.id, 35); }
+      });
       items.push({
         label: 'Delete Node',
         danger: true,
@@ -505,6 +562,34 @@
         action: function() {
           var cId = editor.addNode(pos.x, pos.y, true);
           editor.addGear(cId, 45, 15);
+        }
+      });
+      items.push({
+        label: 'Add Pulley Wheel',
+        action: function() {
+          var cId = editor.addNode(pos.x, pos.y, true);
+          editor.addPulley(cId, 35);
+        }
+      });
+      items.push({
+        label: 'Add Cam Profile (Pear Cam)',
+        action: function() {
+          var cId = editor.addNode(pos.x, pos.y, true);
+          editor.addCam(cId, 'pear', 35, 25);
+        }
+      });
+      items.push({
+        label: 'Add Cam Profile (Eccentric Cam)',
+        action: function() {
+          var cId = editor.addNode(pos.x, pos.y, true);
+          editor.addCam(cId, 'eccentric', 35, 25);
+        }
+      });
+      items.push({
+        label: 'Add Cam Profile (Snail Drop Cam)',
+        action: function() {
+          var cId = editor.addNode(pos.x, pos.y, true);
+          editor.addCam(cId, 'snail', 35, 30);
         }
       });
       items.push({

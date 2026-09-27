@@ -593,8 +593,243 @@
   };
 
   /**
-   * Render coupler curve traces for tracked nodes with distinct node colors.
+   * Render mechanical pulley with V-belt groove, lightening holes, and keyed brass hub.
    */
+  SpriteRenderer.prototype.drawPulley = function(ctx, cx, cy, radius, angle, options) {
+    options = options || {};
+    radius = radius || 30;
+    var rimWidth = 4;
+    var hubR = radius * 0.32;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+
+    // 1. Outer rim
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    ctx.fillStyle = '#64748b';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#1e293b';
+    ctx.stroke();
+
+    // 2. Belt groove recess (concentric ring)
+    ctx.beginPath();
+    ctx.arc(0, 0, radius - rimWidth, 0, Math.PI * 2);
+    ctx.fillStyle = '#475569';
+    ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = '#0f172a';
+    ctx.stroke();
+
+    // 3. Rotating spokes / lightening holes
+    ctx.save();
+    ctx.rotate(angle || 0);
+
+    var numHoles = radius > 35 ? 4 : 3;
+    var holeR = (radius - rimWidth - hubR) * 0.32;
+    var holeDist = (radius - rimWidth + hubR) * 0.5;
+
+    for (var h = 0; h < numHoles; h++) {
+      var a = h * (Math.PI * 2 / numHoles);
+      ctx.beginPath();
+      ctx.arc(holeDist * Math.cos(a), holeDist * Math.sin(a), holeR, 0, Math.PI * 2);
+      ctx.fillStyle = '#cbd5e1';
+      ctx.fill();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = '#334155';
+      ctx.stroke();
+    }
+
+    // 4. Central brass hub with keyway
+    ctx.beginPath();
+    ctx.arc(0, 0, hubR, 0, Math.PI * 2);
+    ctx.fillStyle = '#d97706';
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#92400e';
+    ctx.stroke();
+
+    // Keyway shaft notch
+    var shaftR = hubR * 0.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, shaftR, 0, Math.PI * 2);
+    ctx.fillStyle = '#0f172a';
+    ctx.fill();
+
+    ctx.fillRect(shaftR * 0.5, -2, 3, 4);
+
+    ctx.restore(); // rotate
+    ctx.restore(); // translate
+  };
+
+  /**
+   * Render continuous rubber transmission belt around two pulleys.
+   */
+  SpriteRenderer.prototype.drawBelt = function(ctx, c1x, c1y, r1, c2x, c2y, r2, crossed, beltWidth, animOffset) {
+    beltWidth = beltWidth || 6;
+    var Math2D = (typeof window !== 'undefined' && window.Math2D) || (typeof global !== 'undefined' && global.Math2D);
+    if (!Math2D) return;
+
+    var tang = Math2D.circleTangents(c1x, c1y, r1, c2x, c2y, r2, crossed);
+    if (!tang) return;
+
+    ctx.save();
+
+    // 1. Draw outer belt loop
+    ctx.beginPath();
+    if (!crossed) {
+      // Open belt: wrap around circle 1 from a2 to a1, line to p2a, wrap circle 2 from a1 to a2, line to p1b
+      ctx.arc(c1x, c1y, r1, tang.a2, tang.a1, false);
+      ctx.lineTo(tang.p2a[0], tang.p2a[1]);
+      ctx.arc(c2x, c2y, r2, tang.a1, tang.a2, false);
+      ctx.lineTo(tang.p1b[0], tang.p1b[1]);
+    } else {
+      // Crossed belt
+      ctx.arc(c1x, c1y, r1, tang.a2, tang.a1, false);
+      ctx.lineTo(tang.p2a[0], tang.p2a[1]);
+      ctx.arc(c2x, c2y, r2, tang.a1 + Math.PI, tang.a2 - Math.PI, false);
+      ctx.lineTo(tang.p1b[0], tang.p1b[1]);
+    }
+    ctx.closePath();
+
+    // Industrial neoprene belt band
+    ctx.lineWidth = beltWidth;
+    ctx.strokeStyle = '#1e293b';
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+
+    // 2. Ribbed/toothed timing track texture along belt
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#64748b';
+    ctx.setLineDash([5, 4]);
+    ctx.lineDashOffset = animOffset || 0;
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.restore();
+  };
+
+  /**
+   * Render Cam Profile with accurate geometry, apex lobe, and brass mounting hub.
+   */
+  SpriteRenderer.prototype.drawCam = function(ctx, cx, cy, angle, profileType, baseRadius, lift, options) {
+    baseRadius = baseRadius || 35;
+    lift = lift !== undefined ? lift : 20;
+    options = options || {};
+
+    var Math2D = (typeof window !== 'undefined' && window.Math2D) || (typeof global !== 'undefined' && global.Math2D);
+    if (!Math2D) return;
+
+    var pts = Math2D.getCamPoints(profileType, baseRadius, lift, 72, options);
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(angle || 0);
+
+    // 1. Draw cam contour
+    ctx.beginPath();
+    for (var i = 0; i < pts.length; i++) {
+      if (i === 0) ctx.moveTo(pts[i][0], pts[i][1]);
+      else ctx.lineTo(pts[i][0], pts[i][1]);
+    }
+    ctx.closePath();
+
+    // Solid steel body
+    ctx.fillStyle = '#64748b';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#1e293b';
+    ctx.stroke();
+
+    // 2. Perimeter bevel guideline
+    ctx.beginPath();
+    for (var j = 0; j < pts.length; j++) {
+      var bx = pts[j][0] * 0.90;
+      var by = pts[j][1] * 0.90;
+      if (j === 0) ctx.moveTo(bx, by);
+      else ctx.lineTo(bx, by);
+    }
+    ctx.closePath();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.stroke();
+
+    // 3. Timing mark at apex (0 deg)
+    var apexR = Math2D.getCamRadius(profileType, 0, baseRadius, lift, options);
+    ctx.beginPath();
+    ctx.moveTo(apexR - 6, 0);
+    ctx.lineTo(apexR, 0);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#ef4444';
+    ctx.stroke();
+
+    // 4. Central mounting hub & keyway
+    ctx.beginPath();
+    ctx.arc(0, 0, baseRadius * 0.35, 0, Math.PI * 2);
+    ctx.fillStyle = '#d97706';
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#92400e';
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(0, 0, baseRadius * 0.18, 0, Math.PI * 2);
+    ctx.fillStyle = '#0f172a';
+    ctx.fill();
+
+    ctx.restore();
+  };
+
+  /**
+   * Render mechanical axle (concentric collar or drive shaft).
+   */
+  SpriteRenderer.prototype.drawAxle = function(ctx, x1, y1, x2, y2, options) {
+    options = options || {};
+    var isConcentric = Math.hypot(x2 - x1, y2 - y1) < 1.0;
+
+    ctx.save();
+    if (isConcentric) {
+      // Concentric shaft collar with hex bolt
+      ctx.beginPath();
+      ctx.arc(x1, y1, 14, 0, Math.PI * 2);
+      ctx.fillStyle = '#b45309';
+      ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#78350f';
+      ctx.stroke();
+
+      // Hex set screw
+      ctx.beginPath();
+      ctx.arc(x1 + 8, y1, 3, 0, Math.PI * 2);
+      ctx.fillStyle = '#334155';
+      ctx.fill();
+    } else {
+      // Drive shaft connecting two nodes
+      var angle = Math.atan2(y2 - y1, x2 - x1);
+      var len = Math.hypot(x2 - x1, y2 - y1);
+
+      ctx.translate(x1, y1);
+      ctx.rotate(angle);
+
+      // Shaft tube
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillRect(0, -5, len, 10);
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(0, -5, len, 10);
+
+      // Couplings at ends
+      ctx.fillStyle = '#475569';
+      ctx.fillRect(-2, -9, 8, 18);
+      ctx.fillRect(len - 6, -9, 8, 18);
+      ctx.strokeStyle = '#0f172a';
+      ctx.strokeRect(-2, -9, 8, 18);
+      ctx.strokeRect(len - 6, -9, 8, 18);
+    }
+    ctx.restore();
+  };
   SpriteRenderer.prototype.drawTracePaths = function(ctx) {
     if (!this.showTraces) return;
     ctx.save();

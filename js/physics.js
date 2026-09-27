@@ -47,8 +47,17 @@
     this.motors = [];        // { centerNode, crankNode, speed, radius, angle, active }
     this.brackets = [];      // { a, b, c, width, color }
     this.attachedNodes = []; // { nodeId, gearIdx, radius, angleOffset }
-    this.genevas = [];       // { driverCenterNode, driverPinNode, genevaCenterNode, slots, radius, pinRadius, lockRadius, angle, dwellAngle, isEngaged, slotWidth }
+    this.genevas = [];       // { driverCenterNode, driverPinNode, genevaCenterNode, slots, radius, pinRadius, lockRadius, angle, dwellAngle, isEngaged, slotWidth, angularVelocity, contactForce }
     this.attachedGenevaNodes = []; // { nodeId, genevaIdx, radius, angleOffset }
+
+    // Power transmission & Physical Camming
+    this.pulleys = [];       // { nodeId, radius, angle, angularVelocity }
+    this.belts = [];         // { pulleyA, pulleyB, crossed, compliance, width }
+    this.axles = [];         // { targetA: { type, index }, targetB: { type, index } }
+    this.cams = [];          // { centerNode, profileType, baseRadius, lift, angle, angularVelocity, options }
+    this.camContacts = [];   // { camIdx, followerNode, rollerRadius, compliance, normalForce }
+    this.attachedPulleyNodes = []; // { nodeId, pulleyIdx, radius, angleOffset }
+    this.attachedCamNodes = [];    // { nodeId, camIdx, radius, angleOffset }
 
     // Direct user interaction
     this.mouseDragNode = -1;
@@ -90,6 +99,13 @@
     this.attachedNodes = [];
     this.genevas = [];
     this.attachedGenevaNodes = [];
+    this.pulleys = [];
+    this.belts = [];
+    this.axles = [];
+    this.cams = [];
+    this.camContacts = [];
+    this.attachedPulleyNodes = [];
+    this.attachedCamNodes = [];
     this.mouseDragNode = -1;
     this.time = 0;
   };
@@ -172,6 +188,115 @@
     this.invMass[nodeId] = 0.0;
   };
 
+  PhysicsSystem.prototype.addPulley = function(nodeId, radius, options) {
+    options = options || {};
+    var pulley = {
+      nodeId: nodeId,
+      radius: radius || 30,
+      angle: options.angle || 0,
+      angularVelocity: 0,
+      width: options.width || 8,
+      grooveDepth: options.grooveDepth || 4
+    };
+    this.pulleys.push(pulley);
+    return pulley;
+  };
+
+  PhysicsSystem.prototype.addBelt = function(pulleyA, pulleyB, options) {
+    options = options || {};
+    var belt = {
+      pulleyA: pulleyA,
+      pulleyB: pulleyB,
+      crossed: !!options.crossed,
+      compliance: options.compliance !== undefined ? options.compliance : 0.0,
+      width: options.width || 6
+    };
+    this.belts.push(belt);
+    return belt;
+  };
+
+  PhysicsSystem.prototype.addAxle = function(targetA, targetB, options) {
+    options = options || {};
+    // targetA & targetB: { type: 'gear'|'pulley'|'cam'|'motor', index: number }
+    var axle = {
+      targetA: targetA,
+      targetB: targetB,
+      ratio: options.ratio || 1.0,
+      shaftNodeA: options.shaftNodeA,
+      shaftNodeB: options.shaftNodeB
+    };
+    this.axles.push(axle);
+    return axle;
+  };
+
+  PhysicsSystem.prototype.addCam = function(centerNode, profileType, baseRadius, lift, options) {
+    options = options || {};
+    var cam = {
+      centerNode: centerNode,
+      profileType: profileType || 'pear',
+      baseRadius: baseRadius || 35,
+      lift: lift !== undefined ? lift : 20,
+      angle: options.initialAngle || 0,
+      angularVelocity: 0,
+      options: options
+    };
+    this.cams.push(cam);
+    return cam;
+  };
+
+  PhysicsSystem.prototype.addCamContact = function(camIdx, followerNode, rollerRadius, options) {
+    options = options || {};
+    var contact = {
+      camIdx: camIdx,
+      followerNode: followerNode,
+      rollerRadius: rollerRadius !== undefined ? rollerRadius : 8,
+      compliance: options.compliance || 0.0,
+      normalForce: 0
+    };
+    this.camContacts.push(contact);
+    return contact;
+  };
+
+  PhysicsSystem.prototype.attachNodeToPulley = function(nodeId, pulleyIdx, radius, angleOffset) {
+    var p = this.pulleys[pulleyIdx];
+    if (!p) return;
+    var cx = this.x[p.nodeId];
+    var cy = this.y[p.nodeId];
+    if (radius === undefined) {
+      radius = Math2D.dist(cx, cy, this.x[nodeId], this.y[nodeId]);
+    }
+    if (angleOffset === undefined) {
+      angleOffset = Math.atan2(this.y[nodeId] - cy, this.x[nodeId] - cx) - p.angle;
+    }
+    this.attachedPulleyNodes.push({
+      nodeId: nodeId,
+      pulleyIdx: pulleyIdx,
+      radius: radius,
+      angleOffset: angleOffset
+    });
+    this.invMass[nodeId] = 0.0;
+  };
+
+  PhysicsSystem.prototype.attachNodeToCam = function(nodeId, camIdx, radius, angleOffset) {
+    var c = this.cams[camIdx];
+    if (!c) return;
+    var cx = this.x[c.centerNode];
+    var cy = this.y[c.centerNode];
+    if (radius === undefined) {
+      radius = Math2D.dist(cx, cy, this.x[nodeId], this.y[nodeId]);
+    }
+    if (angleOffset === undefined) {
+      angleOffset = Math.atan2(this.y[nodeId] - cy, this.x[nodeId] - cx) - c.angle;
+    }
+    this.attachedCamNodes.push({
+      nodeId: nodeId,
+      camIdx: camIdx,
+      radius: radius,
+      angleOffset: angleOffset
+    });
+    this.invMass[nodeId] = 0.0;
+  };
+
   PhysicsSystem.prototype.addGeneva = function(driverCenterNode, driverPinNode, genevaCenterNode, slots, options) {
     options = options || {};
     var numSlots = slots || 4;
@@ -196,8 +321,10 @@
       lockRadius: lockRadius,
       angle: options.initialAngle || 0,
       dwellAngle: options.initialAngle || 0,
+      angularVelocity: 0,
       isEngaged: false,
-      slotWidth: options.slotWidth || 10
+      slotWidth: options.slotWidth || 10,
+      contactForce: 0
     };
     this.genevas.push(geneva);
     return geneva;
@@ -221,6 +348,63 @@
       angleOffset: angleOffset
     });
     this.invMass[nodeId] = 0.0;
+  };
+
+  PhysicsSystem.prototype.getRotaryAngle = function(target) {
+    if (!target) return 0;
+    if (target.type === 'gear' && this.gears[target.index]) return this.gears[target.index].angle;
+    if (target.type === 'pulley' && this.pulleys[target.index]) return this.pulleys[target.index].angle;
+    if (target.type === 'cam' && this.cams[target.index]) return this.cams[target.index].angle;
+    if (target.type === 'motor' && this.motors[target.index]) return this.motors[target.index].angle;
+    return 0;
+  };
+
+  PhysicsSystem.prototype.setRotaryAngle = function(target, angle) {
+    if (!target) return;
+    if (target.type === 'gear' && this.gears[target.index]) {
+      this.gears[target.index].angle = angle;
+      this.propagateGearAngles(target.index);
+    } else if (target.type === 'pulley' && this.pulleys[target.index]) {
+      this.pulleys[target.index].angle = angle;
+      this.propagateBeltAngles(target.index);
+    } else if (target.type === 'cam' && this.cams[target.index]) {
+      this.cams[target.index].angle = angle;
+    }
+  };
+
+  PhysicsSystem.prototype.propagateBeltAngles = function(sourcePulleyIdx) {
+    var visited = new Set();
+    var queue = [sourcePulleyIdx];
+    visited.add(sourcePulleyIdx);
+
+    while (queue.length > 0) {
+      var currIdx = queue.shift();
+      var p1 = this.pulleys[currIdx];
+      if (!p1) continue;
+
+      for (var bi = 0; bi < this.belts.length; bi++) {
+        var belt = this.belts[bi];
+        var otherIdx = -1;
+        var forward = true;
+        if (belt.pulleyA === currIdx) {
+          otherIdx = belt.pulleyB;
+          forward = true;
+        } else if (belt.pulleyB === currIdx) {
+          otherIdx = belt.pulleyA;
+          forward = false;
+        }
+        if (otherIdx !== -1 && !visited.has(otherIdx)) {
+          visited.add(otherIdx);
+          var p2 = this.pulleys[otherIdx];
+          if (p2) {
+            var sign = belt.crossed ? -1 : 1;
+            var ratio = forward ? (p1.radius / p2.radius) : (p2.radius / p1.radius);
+            p2.angle = p1.angle * ratio * sign;
+            queue.push(otherIdx);
+          }
+        }
+      }
+    }
   };
 
   PhysicsSystem.prototype.addSlider = function(node, aNode, bNode, minT, maxT) {
@@ -360,9 +544,31 @@
             this.propagateGearAngles(gi);
           }
         }
+
+        // Drive pulley rotation if center is connected to a pulley
+        for (var pi = 0; pi < this.pulleys.length; pi++) {
+          if (this.pulleys[pi].nodeId === motor.centerNode) {
+            this.pulleys[pi].angle += motor.speed * h;
+            this.propagateBeltAngles(pi);
+          }
+        }
+
+        // Drive cam rotation if center is connected to a cam
+        for (var ci = 0; ci < this.cams.length; ci++) {
+          if (this.cams[ci].centerNode === motor.centerNode) {
+            this.cams[ci].angle += motor.speed * h;
+          }
+        }
       }
 
-      // Update attached nodes on gears before integration
+      // 2.5 Propagate Axles (Concentric & Drive Shafts)
+      for (var axi = 0; axi < this.axles.length; axi++) {
+        var axle = this.axles[axi];
+        var angleA = this.getRotaryAngle(axle.targetA);
+        this.setRotaryAngle(axle.targetB, angleA * (axle.ratio || 1.0));
+      }
+
+      // Update attached nodes on gears, pulleys, and cams before integration
       for (var ai = 0; ai < this.attachedNodes.length; ai++) {
         var att = this.attachedNodes[ai];
         var ag = this.gears[att.gearIdx];
@@ -374,8 +580,30 @@
           this.y[att.nodeId] = acy + att.radius * Math.sin(totA);
         }
       }
+      for (var api = 0; api < this.attachedPulleyNodes.length; api++) {
+        var attP = this.attachedPulleyNodes[api];
+        var ap = this.pulleys[attP.pulleyIdx];
+        if (ap) {
+          var pcx = this.x[ap.nodeId];
+          var pcy = this.y[ap.nodeId];
+          var totPA = ap.angle + attP.angleOffset;
+          this.x[attP.nodeId] = pcx + attP.radius * Math.cos(totPA);
+          this.y[attP.nodeId] = pcy + attP.radius * Math.sin(totPA);
+        }
+      }
+      for (var aci = 0; aci < this.attachedCamNodes.length; aci++) {
+        var attC = this.attachedCamNodes[aci];
+        var ac = this.cams[attC.camIdx];
+        if (ac) {
+          var ccx = this.x[ac.centerNode];
+          var ccy = this.y[ac.centerNode];
+          var totCA = ac.angle + attC.angleOffset;
+          this.x[attC.nodeId] = ccx + attC.radius * Math.cos(totCA);
+          this.y[attC.nodeId] = ccy + attC.radius * Math.sin(totCA);
+        }
+      }
 
-      // Advance Geneva mechanism indexing
+      // 2.7 Advance Geneva mechanism with Physical Contact & Dwell Locking
       for (var gi = 0; gi < this.genevas.length; gi++) {
         var g = this.genevas[gi];
         var c1x = this.x[g.driverCenterNode], c1y = this.y[g.driverCenterNode];
@@ -393,7 +621,7 @@
         var ry = py - c2y;
         var rDist = Math.hypot(rx, ry);
 
-        var inSlot = (Math.abs(phiRel) <= beta + 0.03) && (rDist <= g.radius + 3);
+        var inSlot = (Math.abs(phiRel) <= beta + 0.03) && (rDist <= g.radius + 4);
 
         if (inSlot) {
           var thetaPin = Math.atan2(ry, rx);
@@ -401,6 +629,8 @@
           var rotDelta = -(psiRel - beta);
           g.angle = g.dwellAngle + rotDelta;
           g.isEngaged = true;
+          g.angularVelocity = (rotDelta / h);
+          g.contactForce = Math.abs(rotDelta) * 50;
         } else {
           if (g.isEngaged) {
             var step = (2 * Math.PI) / g.slots;
@@ -408,6 +638,8 @@
             g.isEngaged = false;
           }
           g.angle = g.dwellAngle;
+          g.angularVelocity = 0;
+          g.contactForce = 0;
         }
       }
 
@@ -522,6 +754,40 @@
             this.vy[sNode] *= Math.max(0, 1.0 - sliderObj.friction * h * 10);
           }
         }
+
+        // Physical Cam-Follower Contact Non-Penetration Constraint
+        for (var cci = 0; cci < this.camContacts.length; cci++) {
+          var cc = this.camContacts[cci];
+          var cam = this.cams[cc.camIdx];
+          var fn = cc.followerNode;
+          if (!cam) continue;
+
+          var cx = this.x[cam.centerNode], cy = this.y[cam.centerNode];
+          var fx = this.x[fn], fy = this.y[fn];
+          var dx = fx - cx, dy = fy - cy;
+          var dist = Math.hypot(dx, dy);
+          if (dist < 1e-4) continue;
+
+          var phi = Math.atan2(dy, dx);
+          var relAngle = Math2D.normalizeAngle(phi - cam.angle);
+          var camR = Math2D.getCamRadius(cam.profileType, relAngle, cam.baseRadius, cam.lift, cam.options);
+          var rollerR = cc.rollerRadius || 8;
+          var reqDist = camR + rollerR;
+          var penetration = reqDist - dist;
+
+          if (penetration > 0) {
+            var nx = dx / dist;
+            var ny = dy / dist;
+            var wFn = this.invMass[fn];
+            if (wFn > 0) {
+              this.x[fn] += nx * penetration;
+              this.y[fn] += ny * penetration;
+              cc.normalForce = penetration / hSq;
+            }
+          } else {
+            cc.normalForce = 0;
+          }
+        }
       }
 
       // Re-assert fixed pins, motor crank positions, and gear attached nodes
@@ -548,6 +814,28 @@
           var totA = ag.angle + att.angleOffset;
           this.x[att.nodeId] = acx + att.radius * Math.cos(totA);
           this.y[att.nodeId] = acy + att.radius * Math.sin(totA);
+        }
+      }
+      for (var api = 0; api < this.attachedPulleyNodes.length; api++) {
+        var attP = this.attachedPulleyNodes[api];
+        var ap = this.pulleys[attP.pulleyIdx];
+        if (ap) {
+          var pcx = this.x[ap.nodeId];
+          var pcy = this.y[ap.nodeId];
+          var totPA = ap.angle + attP.angleOffset;
+          this.x[attP.nodeId] = pcx + attP.radius * Math.cos(totPA);
+          this.y[attP.nodeId] = pcy + attP.radius * Math.sin(totPA);
+        }
+      }
+      for (var aci = 0; aci < this.attachedCamNodes.length; aci++) {
+        var attC = this.attachedCamNodes[aci];
+        var ac = this.cams[attC.camIdx];
+        if (ac) {
+          var ccx = this.x[ac.centerNode];
+          var ccy = this.y[ac.centerNode];
+          var totCA = ac.angle + attC.angleOffset;
+          this.x[attC.nodeId] = ccx + attC.radius * Math.cos(totCA);
+          this.y[attC.nodeId] = ccy + attC.radius * Math.sin(totCA);
         }
       }
       for (var agi = 0; agi < this.attachedGenevaNodes.length; agi++) {
@@ -593,7 +881,11 @@
       vy: Array.from(this.vy.subarray(0, this.numNodes)),
       motorAngles: this.motors.map(function(m) { return m.angle; }),
       gearAngles: this.gears.map(function(g) { return g.angle; }),
-      genevaAngles: this.genevas.map(function(g) { return { angle: g.angle, dwellAngle: g.dwellAngle, isEngaged: g.isEngaged }; }),
+      pulleyAngles: this.pulleys.map(function(p) { return p.angle; }),
+      camAngles: this.cams.map(function(c) { return c.angle; }),
+      genevaAngles: this.genevas.map(function(g) {
+        return { angle: g.angle, dwellAngle: g.dwellAngle, isEngaged: g.isEngaged, angularVelocity: g.angularVelocity };
+      }),
       time: this.time
     };
     return snap;
@@ -623,11 +915,24 @@
         this.gears[g].angle = snap.gearAngles[g];
       }
     }
+    if (snap.pulleyAngles) {
+      for (var p = 0; p < this.pulleys.length && p < snap.pulleyAngles.length; p++) {
+        this.pulleys[p].angle = snap.pulleyAngles[p];
+      }
+    }
+    if (snap.camAngles) {
+      for (var c = 0; c < this.cams.length && c < snap.camAngles.length; c++) {
+        this.cams[c].angle = snap.camAngles[c];
+      }
+    }
     if (snap.genevaAngles) {
       for (var gi = 0; gi < this.genevas.length && gi < snap.genevaAngles.length; gi++) {
         this.genevas[gi].angle = snap.genevaAngles[gi].angle;
         this.genevas[gi].dwellAngle = snap.genevaAngles[gi].dwellAngle;
         this.genevas[gi].isEngaged = snap.genevaAngles[gi].isEngaged;
+        if (snap.genevaAngles[gi].angularVelocity !== undefined) {
+          this.genevas[gi].angularVelocity = snap.genevaAngles[gi].angularVelocity;
+        }
       }
     }
     this.time = snap.time;

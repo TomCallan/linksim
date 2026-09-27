@@ -29,6 +29,11 @@
     this.motors = [];         // [{ centerNode, crankNode, speed }]
     this.brackets = [];       // [{ a, b, c, width, color }]
     this.genevas = [];        // [{ driverCenterNode, driverPinNode, genevaCenterNode, slots, radius, pinRadius, lockRadius, slotWidth, angle }]
+    this.pulleys = [];        // [{ nodeId, radius, width }]
+    this.belts = [];          // [{ pulleyA, pulleyB, crossed, width }]
+    this.axles = [];          // [{ targetA, targetB, shaftNodeA, shaftNodeB }]
+    this.cams = [];           // [{ centerNode, profileType, baseRadius, lift, options }]
+    this.camContacts = [];    // [{ camIdx, followerNode, rollerRadius }]
     this.trackedNodes = new Set(); // Node IDs being tracked for motion paths
 
     // Viewport pan/zoom
@@ -40,11 +45,13 @@
     this.mode = 'edit';
 
     // Tool state
-    this.activeTool = 'select'; // 'select', 'add_pin', 'add_node', 'add_rod', 'add_slider', 'add_gear', 'add_motor', 'add_bracket', 'delete'
+    this.activeTool = 'select'; // 'select', 'add_pin', 'add_node', 'add_rod', 'add_slider', 'add_gear', 'add_motor', 'add_bracket', 'add_pulley', 'add_belt', 'add_cam', 'add_axle', 'delete'
     this.selectedNodeId = -1;
     this.hoverNodeId = -1;
     this.hoverGearIdx = -1;
     this.hoverRodIdx = -1;
+    this.hoverPulleyIdx = -1;
+    this.hoverCamIdx = -1;
 
     // Interaction flags
     this.isDragging = false;
@@ -126,6 +133,34 @@
       if (cNode) {
         var d = Math2D.dist(wx, wy, cNode.x, cNode.y);
         if (d <= g.radius * 1.2) {
+          return i;
+        }
+      }
+    }
+    return -1;
+  };
+
+  MechanismEditor.prototype.findPulleyNear = function(wx, wy) {
+    for (var i = this.pulleys.length - 1; i >= 0; i--) {
+      var p = this.pulleys[i];
+      var cNode = this.getNodeById(p.nodeId);
+      if (cNode) {
+        var d = Math2D.dist(wx, wy, cNode.x, cNode.y);
+        if (d <= p.radius * 1.2) {
+          return i;
+        }
+      }
+    }
+    return -1;
+  };
+
+  MechanismEditor.prototype.findCamNear = function(wx, wy) {
+    for (var i = this.cams.length - 1; i >= 0; i--) {
+      var c = this.cams[i];
+      var cNode = this.getNodeById(c.centerNode);
+      if (cNode) {
+        var d = Math2D.dist(wx, wy, cNode.x, cNode.y);
+        if (d <= (c.baseRadius + (c.lift || 0)) * 1.2) {
           return i;
         }
       }
@@ -371,6 +406,11 @@
     this.motors = [];
     this.brackets = [];
     this.genevas = [];
+    this.pulleys = [];
+    this.belts = [];
+    this.axles = [];
+    this.cams = [];
+    this.camContacts = [];
     this.trackedNodes.clear();
     if (this.renderer) {
       this.renderer.clearTraces();
@@ -396,7 +436,12 @@
       gears: JSON.parse(JSON.stringify(this.gears)),
       motors: JSON.parse(JSON.stringify(this.motors)),
       brackets: JSON.parse(JSON.stringify(this.brackets)),
-      genevas: JSON.parse(JSON.stringify(this.genevas))
+      genevas: JSON.parse(JSON.stringify(this.genevas)),
+      pulleys: JSON.parse(JSON.stringify(this.pulleys)),
+      belts: JSON.parse(JSON.stringify(this.belts)),
+      axles: JSON.parse(JSON.stringify(this.axles)),
+      cams: JSON.parse(JSON.stringify(this.cams)),
+      camContacts: JSON.parse(JSON.stringify(this.camContacts))
     };
   };
 
@@ -409,9 +454,83 @@
     this.motors = data.motors || [];
     this.brackets = data.brackets || [];
     this.genevas = data.genevas || [];
+    this.pulleys = data.pulleys || [];
+    this.belts = data.belts || [];
+    this.axles = data.axles || [];
+    this.cams = data.cams || [];
+    this.camContacts = data.camContacts || [];
     this.selectedNodeId = -1;
     this.isConnecting = false;
     this._notifyChange();
+  };
+
+  MechanismEditor.prototype.addPulley = function(nodeId, radius, options) {
+    this.saveState();
+    options = options || {};
+    var pulley = {
+      nodeId: nodeId,
+      radius: radius || 30,
+      width: options.width || 8
+    };
+    this.pulleys.push(pulley);
+    this._notifyChange();
+    return pulley;
+  };
+
+  MechanismEditor.prototype.addBelt = function(pulleyA, pulleyB, options) {
+    this.saveState();
+    options = options || {};
+    var belt = {
+      pulleyA: pulleyA,
+      pulleyB: pulleyB,
+      crossed: !!options.crossed,
+      width: options.width || 6
+    };
+    this.belts.push(belt);
+    this._notifyChange();
+    return belt;
+  };
+
+  MechanismEditor.prototype.addAxle = function(targetA, targetB, options) {
+    this.saveState();
+    options = options || {};
+    var axle = {
+      targetA: targetA,
+      targetB: targetB,
+      ratio: options.ratio || 1.0,
+      shaftNodeA: options.shaftNodeA,
+      shaftNodeB: options.shaftNodeB
+    };
+    this.axles.push(axle);
+    this._notifyChange();
+    return axle;
+  };
+
+  MechanismEditor.prototype.addCam = function(centerNode, profileType, baseRadius, lift, options) {
+    this.saveState();
+    options = options || {};
+    var cam = {
+      centerNode: centerNode,
+      profileType: profileType || 'pear',
+      baseRadius: baseRadius || 35,
+      lift: lift !== undefined ? lift : 20,
+      options: options
+    };
+    this.cams.push(cam);
+    this._notifyChange();
+    return cam;
+  };
+
+  MechanismEditor.prototype.addCamContact = function(camIdx, followerNode, rollerRadius) {
+    this.saveState();
+    var contact = {
+      camIdx: camIdx,
+      followerNode: followerNode,
+      rollerRadius: rollerRadius !== undefined ? rollerRadius : 8
+    };
+    this.camContacts.push(contact);
+    this._notifyChange();
+    return contact;
   };
 
   MechanismEditor.prototype.addGeneva = function(driverCenter, driverPin, genevaCenter, slots, options) {
@@ -818,6 +937,94 @@
       }
     }
 
+    // 1.2 Draw Belts & Pulleys
+    var pulleys = (simPhysics && this.mode === 'simulate') ? simPhysics.pulleys : this.pulleys;
+    var belts = (simPhysics && this.mode === 'simulate') ? simPhysics.belts : this.belts;
+    for (var bi = 0; bi < belts.length; bi++) {
+      var blt = belts[bi];
+      var pA = pulleys[blt.pulleyA];
+      var pB = pulleys[blt.pulleyB];
+      if (pA && pB) {
+        var nA = nodePositions[pA.nodeId];
+        var nB = nodePositions[pB.nodeId];
+        if (nA && nB) {
+          var aAngle = (simPhysics && this.mode === 'simulate') ? pA.angle : 0;
+          this.renderer.drawBelt(ctx, nA.x, nA.y, pA.radius, nB.x, nB.y, pB.radius, blt.crossed, blt.width || 6, aAngle * 10);
+        }
+      }
+    }
+
+    // 1.4 Draw Axles (Shafts & Concentric Couplings)
+    var axles = (simPhysics && this.mode === 'simulate') ? simPhysics.axles : this.axles;
+    for (var axi = 0; axi < axles.length; axi++) {
+      var ax = axles[axi];
+      if (ax.shaftNodeA !== undefined && ax.shaftNodeB !== undefined) {
+        var snA = nodePositions[ax.shaftNodeA];
+        var snB = nodePositions[ax.shaftNodeB];
+        if (snA && snB) {
+          this.renderer.drawAxle(ctx, snA.x, snA.y, snB.x, snB.y, ax);
+        }
+      }
+    }
+
+    // 1.6 Draw Pulleys
+    for (var pi = 0; pi < pulleys.length; pi++) {
+      var pul = pulleys[pi];
+      var pp = nodePositions[pul.nodeId];
+      if (pp) {
+        var pAngle = (simPhysics && this.mode === 'simulate') ? pul.angle : 0;
+        this.renderer.drawPulley(ctx, pp.x, pp.y, pul.radius, pAngle, pul);
+
+        if (pi === this.hoverPulleyIdx && this.mode === 'edit') {
+          ctx.beginPath();
+          ctx.arc(pp.x, pp.y, pul.radius + 5, 0, Math.PI * 2);
+          ctx.strokeStyle = '#38bdf8';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+      }
+    }
+
+    // 1.8 Draw Cams & Follower Contacts
+    var cams = (simPhysics && this.mode === 'simulate') ? simPhysics.cams : this.cams;
+    for (var ci = 0; ci < cams.length; ci++) {
+      var cam = cams[ci];
+      var cp = nodePositions[cam.centerNode];
+      if (cp) {
+        var cAngle = (simPhysics && this.mode === 'simulate') ? cam.angle : (cam.angle || 0);
+        this.renderer.drawCam(ctx, cp.x, cp.y, cAngle, cam.profileType, cam.baseRadius, cam.lift, cam.options);
+
+        if (ci === this.hoverCamIdx && this.mode === 'edit') {
+          ctx.beginPath();
+          ctx.arc(cp.x, cp.y, (cam.baseRadius + (cam.lift || 0)) + 6, 0, Math.PI * 2);
+          ctx.strokeStyle = '#38bdf8';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+      }
+    }
+
+    var camContacts = (simPhysics && this.mode === 'simulate') ? simPhysics.camContacts : this.camContacts;
+    for (var cci = 0; cci < camContacts.length; cci++) {
+      var cc = camContacts[cci];
+      var fPos = nodePositions[cc.followerNode];
+      if (fPos) {
+        // Draw follower roller bearing
+        ctx.beginPath();
+        ctx.arc(fPos.x, fPos.y, cc.rollerRadius || 8, 0, Math.PI * 2);
+        ctx.fillStyle = '#f8fafc';
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#2563eb';
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(fPos.x, fPos.y, 3, 0, Math.PI * 2);
+        ctx.fillStyle = '#0f172a';
+        ctx.fill();
+      }
+    }
+
     // 2. Draw Sliders
     var sliders = (simPhysics && this.mode === 'simulate') ? simPhysics.sliders : this.sliders;
     for (var sl = 0; sl < sliders.length; sl++) {
@@ -850,7 +1057,7 @@
       }
     }
 
-    // 3.5 Draw Geneva Mechanisms & Cams
+    // 3.5 Draw Geneva Mechanisms
     var genevas = (simPhysics && this.mode === 'simulate') ? simPhysics.genevas : this.genevas;
     for (var gi = 0; gi < genevas.length; gi++) {
       var gen = genevas[gi];
@@ -1176,6 +1383,84 @@
       ],
       motors: [
         { centerNode: 0, crankNode: 2, speed: 3.0 }
+      ],
+      brackets: []
+    },
+
+    // 7. Overhead Cam & Valve Follower (Physical Camming)
+    camFollower: {
+      version: '2.0',
+      nodes: [
+        { id: 0, x: -50, y: 0, fixed: true, mass: 1 },    // Cam center
+        { id: 1, x: -50, y: 55, fixed: false, mass: 1 },   // Roller follower
+        { id: 2, x: -50, y: 20, fixed: true, mass: 1 },   // Follower guide start
+        { id: 3, x: -50, y: 160, fixed: true, mass: 1 },  // Follower guide end
+        { id: 4, x: 20, y: 80, fixed: false, mass: 1 },   // Rocker arm input
+        { id: 5, x: 70, y: 80, fixed: true, mass: 1 },    // Rocker arm pivot
+        { id: 6, x: 120, y: 80, fixed: false, mass: 1 },  // Rocker arm output (valve tip)
+        { id: 7, x: 120, y: 140, fixed: true, mass: 1 }   // Valve spring base
+      ],
+      rods: [
+        { a: 1, b: 4, length: 74, width: 10, color: '#3b82f6' },
+        { a: 6, b: 7, length: 60, width: 8, color: '#10b981', material: 'spring' } // Return spring
+      ],
+      sliders: [
+        { node: 1, aNode: 2, bNode: 3, minT: 35, maxT: 85 }
+      ],
+      gears: [],
+      pulleys: [],
+      belts: [],
+      axles: [],
+      cams: [
+        { centerNode: 0, profileType: 'pear', baseRadius: 35, lift: 25, options: { lobeAngle: 60 } }
+      ],
+      camContacts: [
+        { camIdx: 0, followerNode: 1, rollerRadius: 10 }
+      ],
+      motors: [
+        { centerNode: 0, crankNode: 0, speed: 3.5 }
+      ],
+      brackets: [
+        { a: 4, b: 5, c: 6, width: 14, color: '#6366f1' }
+      ]
+    },
+
+    // 8. Belt Drive & Compound Axle Speed Reducer
+    beltDrive: {
+      version: '2.0',
+      nodes: [
+        { id: 0, x: -120, y: 0, fixed: true, mass: 1 },   // Motor & Driver Pulley
+        { id: 1, x: 0, y: 0, fixed: true, mass: 1 },      // Jackshaft: Driven Pulley & Pinion on shared Axle
+        { id: 2, x: 80, y: 0, fixed: true, mass: 1 },     // Driven Gear
+        { id: 3, x: 80, y: 35, fixed: false, mass: 1, parentGear: { gearIdx: 1, radius: 35, angleOffset: Math.PI / 2 } }, // Crank pin on Gear
+        { id: 4, x: 190, y: 35, fixed: false, mass: 1 },  // Piston joint
+        { id: 5, x: 120, y: 35, fixed: true, mass: 1 },   // Piston rail start
+        { id: 6, x: 260, y: 35, fixed: true, mass: 1 }    // Piston rail end
+      ],
+      rods: [
+        { a: 3, b: 4, length: 110, width: 10, color: '#3b82f6' }
+      ],
+      sliders: [
+        { node: 4, aNode: 5, bNode: 6, minT: 10, maxT: 130 }
+      ],
+      gears: [
+        { centerNode: 1, radius: 35, teeth: 14, meshWith: [1] },
+        { centerNode: 2, radius: 45, teeth: 18, meshWith: [0] }
+      ],
+      pulleys: [
+        { nodeId: 0, radius: 25 },
+        { nodeId: 1, radius: 55 }
+      ],
+      belts: [
+        { pulleyA: 0, pulleyB: 1, crossed: false, width: 8 }
+      ],
+      axles: [
+        { targetA: { type: 'pulley', index: 1 }, targetB: { type: 'gear', index: 0 }, ratio: 1.0 }
+      ],
+      cams: [],
+      camContacts: [],
+      motors: [
+        { centerNode: 0, crankNode: 0, speed: 4.0 }
       ],
       brackets: []
     }
