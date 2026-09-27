@@ -1,41 +1,271 @@
 <!DOCTYPE html>
-<html>
-<head><title>Linksim - the mechanical linkage simulator Online</title>
-<meta http-equiv="Content-type" content="text/html; charset=sjis">
-<meta http-equiv="Content-Style-Type" content="text/css">
-<script type="text/javascript" src="https://code.jquery.com/jquery-1.12.0.min.js"></script>
-<script type="text/javascript" src="./exarray.js"></script>
-<script type="text/javascript" src="./exmath.js"></script>
-<script type="text/javascript" src="./matrix.js"></script>
-<script type="text/javascript" src="./excanvas.js"></script>
-<script type="text/javascript" src="./event.js"></script>
-<script type="text/javascript" src="./geom.js"></script>
-<script type="text/javascript" src="./main.js"></script>
-<style><!--
-  h1{text-align:center}
-  body{font-family:Segoe UI; color:black; background-color:white}  
-  a{color:black;border-style:none;text-decoration:underline}
-  a:link{color:black;border-style:none;text-decoration:underline}
-  a:visited{color:black;border-style:none;text-decoration:underline}
-  a:hover{color:black;border-color:none;text-decoration:underline}
-  address{text-align:right;font-style:normal}
-  input{border-style:solid;border-color:black;background-color:black;color:white}
-  .tdbutton{border-width:1px;border-style:solid;border-color:white;height:30px;width:30px}
-  hr{border-style:solid}
-  canvas{padding:0px;margin:0px}
-  .console{font-family:MS Gothic;color:white;background-color:black}
-  .flexwrapparent{display:flex;flex-wrap:wrap}
-  --></style>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Linksim - 2D Mechanical Linkage & Physics Simulator</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      margin: 0;
+      padding: 16px 24px;
+      background-color: #f8fafc;
+      color: #0f172a;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+      border-bottom: 1px solid #e2e8f0;
+      padding-bottom: 10px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .badge {
+      background-color: #e0f2fe;
+      color: #0369a1;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 9999px;
+      margin-left: 8px;
+    }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 0.85rem;
+    }
+    .fps-badge {
+      background-color: #f1f5f9;
+      color: #334155;
+      font-family: monospace;
+      font-weight: 700;
+      padding: 4px 8px;
+      border-radius: 4px;
+      border: 1px solid #cbd5e1;
+    }
+    .main-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      justify-content: center;
+    }
+    .panel {
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      display: flex;
+      flex-direction: column;
+    }
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      min-height: 34px;
+    }
+    .panel-title {
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+    button, select {
+      font-family: inherit;
+      font-size: 0.82rem;
+      font-weight: 500;
+      padding: 5px 10px;
+      border-radius: 4px;
+      border: 1px solid #94a3b8;
+      background: #ffffff;
+      color: #1e293b;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    button:hover, select:hover {
+      background: #f1f5f9;
+      border-color: #64748b;
+    }
+    button:active {
+      transform: translateY(1px);
+    }
+    button.active {
+      background: #2563eb;
+      color: #ffffff;
+      border-color: #1d4ed8;
+    }
+    .btn-danger {
+      color: #dc2626;
+      border-color: #fca5a5;
+    }
+    .btn-danger:hover {
+      background: #fef2f2;
+      border-color: #ef4444;
+    }
+    canvas {
+      display: block;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 4px;
+      cursor: crosshair;
+    }
+    .playback-bar {
+      margin-top: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      background: #f8fafc;
+      padding: 10px;
+      border-radius: 6px;
+      border: 1px solid #e2e8f0;
+    }
+    .playback-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .scrubber-container {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+    }
+    .slider {
+      flex: 1;
+      height: 6px;
+      accent-color: #2563eb;
+      cursor: pointer;
+    }
+    .frame-info {
+      font-family: monospace;
+      font-size: 0.75rem;
+      color: #64748b;
+      min-width: 110px;
+      text-align: right;
+    }
+    .options-bar {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-size: 0.8rem;
+      color: #475569;
+      margin-top: 4px;
+    }
+    .options-bar label {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+    }
+    footer {
+      margin-top: 20px;
+      font-size: 0.78rem;
+      color: #64748b;
+      text-align: center;
+    }
+  </style>
 </head>
 <body>
-<h2>Linksim - mechanical linkage simulator online</h2>
-<div class='flexwrapparent'>
-<canvas id="incanvas" width=600px height=600px style="border-style:solid"></canvas>
-<canvas id="outcanvas" width=600px height=600px style="border-style:solid"></canvas>
-</div>
-<address id="address">Linksim version v1.0<br>
-programmed by <a href='https://twitter.com/koteitan/'>koteitan</a> code at <a href='https://github.com/koteitan/linksim/'>github</a><br>
-</address>
-<textarea id="debug" cols=50 rows=10 style='display:none'></textarea>
+
+<header>
+  <div style="display:flex; align-items:center;">
+    <h1>Linksim</h1>
+    <span class="badge">XPBD 2.0</span>
+  </div>
+  <div class="header-actions">
+    <label for="presetSelect">Preset:</label>
+    <select id="presetSelect">
+      <option value="klann">Klann Walker Linkage</option>
+      <option value="sliderCrank">Slider-Crank (Piston Engine)</option>
+      <option value="chebyshev">Chebyshev Straight-Line</option>
+      <option value="gearTrain">Compound Gear Train</option>
+    </select>
+    <div id="fpsMeter" class="fps-badge">60 FPS</div>
+  </div>
+</header>
+
+<main class="main-grid">
+  <!-- Left Panel: Blueprint Editor -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">Blueprint Editor</span>
+      <div class="toolbar">
+        <button data-tool="select" class="active" title="Select & Move (drag elements)">Select</button>
+        <button data-tool="add_pin" title="Add fixed ground anchor">Add Pin</button>
+        <button data-tool="add_node" title="Add free joint">Add Node</button>
+        <button data-tool="add_rod" title="Connect 2 nodes with rigid rod">Add Rod</button>
+        <button data-tool="add_slider" title="Place linear rail & sliding piston">Add Slider</button>
+        <button data-tool="add_gear" title="Add toothed gear to pivot">Add Gear</button>
+        <button data-tool="add_motor" title="Connect pin to crank with motor">Add Motor</button>
+        <button data-tool="delete" class="btn-danger" title="Delete clicked item">Delete</button>
+        <button id="btnClear" class="btn-danger" title="Clear all">Clear</button>
+      </div>
+    </div>
+    <canvas id="incanvas" width="560" height="560"></canvas>
+    <div style="margin-top:8px; font-size:0.75rem; color:#64748b;">
+      Tip: Left-drag to reposition nodes. Right-drag or middle-drag to pan. Mouse wheel to zoom.
+    </div>
+  </div>
+
+  <!-- Right Panel: Live Simulation & Playback -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">Live Simulation & Playback</span>
+      <div class="options-bar">
+        <label><input type="checkbox" id="toggleStress" checked> Stress Heatmap</label>
+        <label><input type="checkbox" id="toggleTraces" checked> Motion Traces</label>
+      </div>
+    </div>
+    <canvas id="outcanvas" width="560" height="560"></canvas>
+
+    <div class="playback-bar">
+      <div class="playback-controls">
+        <button id="btnPlay">Pause</button>
+        <button id="btnStepBack" title="Step backward one frame">Step Back</button>
+        <button id="btnStepForward" title="Step forward one frame">Step Forward</button>
+        <button id="btnReset" title="Reset simulation to initial frame">Reset</button>
+
+        <label style="margin-left:auto; font-size:0.8rem; color:#475569;" for="speedSelect">Speed:</label>
+        <select id="speedSelect">
+          <option value="0.25">0.25x</option>
+          <option value="0.5">0.5x</option>
+          <option value="1.0" selected>1.0x</option>
+          <option value="2.0">2.0x</option>
+          <option value="4.0">4.0x</option>
+        </select>
+      </div>
+
+      <div class="scrubber-container">
+        <input type="range" id="timeSlider" class="slider" min="0" max="0" value="0">
+        <span id="frameInfo" class="frame-info">Frame: 1 / 1</span>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  Linksim 2.0 &bull; High-Performance Mechanical Linkage & Physics Simulator &bull; Sub-stepped Extended Position-Based Dynamics (XPBD)
+</footer>
+
+<script src="./js/math2d.js"></script>
+<script src="./js/physics.js"></script>
+<script src="./js/timeline.js"></script>
+<script src="./js/sprites.js"></script>
+<script src="./js/editor.js"></script>
+<script src="./js/app.js"></script>
 </body>
 </html>
