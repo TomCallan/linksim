@@ -636,19 +636,27 @@
   /**
    * Render motor actuation indicator (rotational arrow).
    */
-  SpriteRenderer.prototype.drawMotorIndicator = function(ctx, cx, cy, radius, speed) {
+  SpriteRenderer.prototype.drawMotorIndicator = function(ctx, cx, cy, radius, speed, options) {
+    options = options || {};
     ctx.save();
     ctx.translate(cx, cy);
 
+    var isStalled = !!options.stalled;
+    var color = isStalled ? '#ef4444' : '#f59e0b';
+
     ctx.beginPath();
-    var r = radius * 0.7;
+    var r = Math.max(12, radius * 0.7);
     var startAngle = 0;
     var endAngle = Math.PI * 1.5;
     var anticlockwise = speed < 0;
     ctx.arc(0, 0, r, startAngle, endAngle, anticlockwise);
     ctx.lineWidth = 2.5;
-    ctx.strokeStyle = '#f59e0b';
+    ctx.strokeStyle = color;
+    if (isStalled) {
+      ctx.setLineDash([4, 3]);
+    }
     ctx.stroke();
+    ctx.setLineDash([]);
 
     // Arrowhead
     var tipX = r * Math.cos(endAngle);
@@ -659,8 +667,15 @@
     ctx.lineTo(tipX - 7 * Math.cos(tangent - 0.5), tipY - 7 * Math.sin(tangent - 0.5));
     ctx.lineTo(tipX - 7 * Math.cos(tangent + 0.5), tipY - 7 * Math.sin(tangent + 0.5));
     ctx.closePath();
-    ctx.fillStyle = '#f59e0b';
+    ctx.fillStyle = color;
     ctx.fill();
+
+    if (isStalled) {
+      ctx.font = 'bold 9px sans-serif';
+      ctx.fillStyle = '#ef4444';
+      ctx.textAlign = 'center';
+      ctx.fillText('STALL', 0, -r - 4);
+    }
 
     ctx.restore();
   };

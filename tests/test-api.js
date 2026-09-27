@@ -3,6 +3,7 @@ const Math2D = require('../js/math2d.js');
 const PhysicsSystem = require('../js/physics.js');
 const Timeline = require('../js/timeline.js');
 const LinksimAPI = require('../js/api.js');
+const MechanismEditor = require('../js/editor.js');
 
 console.log('Running Linksim Programmatic API & Materials Test Suite...');
 
@@ -363,6 +364,94 @@ console.log('Running Linksim Programmatic API & Materials Test Suite...');
   assert.strictEqual(loopInfoAfter.isHumanInteracting, false);
 
   console.log('PASS: LinksimAPI dragNode, releaseDrag, and derailLoop');
+}
+
+// Test 12: Slider selection along rail segment and MechanismEditor addLever
+{
+  const mockCanvas = {
+    getContext: () => ({
+      clearRect: () => {},
+      beginPath: () => {},
+      arc: () => {},
+      fill: () => {},
+      stroke: () => {},
+      moveTo: () => {},
+      lineTo: () => {},
+      closePath: () => {},
+      save: () => {},
+      restore: () => {},
+      translate: () => {},
+      rotate: () => {},
+      scale: () => {},
+      strokeRect: () => {},
+      fillRect: () => {},
+      fillText: () => {},
+      setLineDash: () => {},
+      measureText: () => ({ width: 10 })
+    }),
+    width: 800,
+    height: 600,
+    addEventListener: () => {}
+  };
+
+  const editor = new MechanismEditor(mockCanvas);
+  // Rail from (0, 100) to (200, 100)
+  const a = editor.addNode(0, 100, true);
+  const b = editor.addNode(200, 100, true);
+  const s = editor.addNode(100, 100, false);
+  editor.addSlider(s, a, b);
+
+  // Click on the rail segment at (50, 100) - NOT directly on node a, b, or s
+  const nearElem = editor.findElementNear(50, 100);
+  assert(nearElem !== null, 'findElementNear returned null along slider rail');
+  assert.strictEqual(nearElem.type, 'slider', `Expected type slider, got ${nearElem.type}`);
+  assert.strictEqual(nearElem.index, 0);
+
+  // Test addLever
+  const lever = editor.addLever(300, 300, { handleLength: 60, armLength: 40 });
+  assert(lever.pivotNode !== undefined);
+  assert(lever.handleNode !== undefined);
+  assert(lever.outputNode !== undefined);
+  assert.strictEqual(editor.brackets.length, 1);
+  const hNode = editor.getNodeById(lever.handleNode);
+  assert.strictEqual(hNode.isHandle, true);
+
+  console.log('PASS: Slider rail hit-testing selection and Lever tool creation');
+}
+
+// Test 13: LinksimAPI getState() reporting motor torque, stall status, and sliders
+{
+  const sim = new PhysicsSystem();
+  const api = LinksimAPI.init(null, sim, null, null);
+
+  api.build({
+    nodes: [
+      { x: 0, y: 0, fixed: true },
+      { x: 0, y: 30, fixed: false },
+      { x: 100, y: 0, fixed: true },
+      { x: 100, y: 100, fixed: true },
+      { x: 100, y: 50, fixed: false }
+    ],
+    sliders: [
+      { node: 4, aNode: 2, bNode: 3, friction: 0.1 }
+    ],
+    motors: [
+      { centerNode: 0, crankNode: 1, speed: 4.0, maxTorque: 2500 }
+    ]
+  });
+
+  const state = api.getState();
+  assert(Array.isArray(state.sliders), 'sliders array missing from getState()');
+  assert.strictEqual(state.sliders.length, 1);
+  assert.strictEqual(state.sliders[0].node, 4);
+
+  assert(Array.isArray(state.motors), 'motors array missing from getState()');
+  assert.strictEqual(state.motors.length, 1);
+  assert.strictEqual(state.motors[0].maxTorque, 2500);
+  assert.strictEqual(state.motors[0].stalled, false);
+  assert(typeof state.motors[0].currentTorque === 'number');
+
+  console.log('PASS: LinksimAPI getState() reporting motor torque, stall status, and sliders');
 }
 
 console.log('All API & Material tests passed successfully!');

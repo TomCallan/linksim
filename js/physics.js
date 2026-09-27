@@ -431,7 +431,8 @@
     }
   };
 
-  PhysicsSystem.prototype.addSlider = function(node, aNode, bNode, minT, maxT) {
+  PhysicsSystem.prototype.addSlider = function(node, aNode, bNode, minT, maxT, options) {
+    options = options || {};
     var ax = this.x[aNode], ay = this.y[aNode];
     var bx = this.x[bNode], by = this.y[bNode];
     var railLen = Math2D.dist(ax, ay, bx, by);
@@ -439,9 +440,10 @@
       node: node,
       aNode: aNode,
       bNode: bNode,
-      minT: minT !== undefined ? minT : -1000,
-      maxT: maxT !== undefined ? maxT : 1000,
-      railLength: railLen
+      minT: (minT !== undefined && minT !== null && isFinite(minT)) ? minT : undefined,
+      maxT: (maxT !== undefined && maxT !== null && isFinite(maxT)) ? maxT : undefined,
+      railLength: railLen,
+      friction: (options.friction !== undefined) ? options.friction : 0
     };
     this.sliders.push(slider);
     return slider;
@@ -468,16 +470,23 @@
     }
   };
 
-  PhysicsSystem.prototype.addMotor = function(centerNode, crankNode, speed) {
+  PhysicsSystem.prototype.addMotor = function(centerNode, crankNode, speed, options) {
+    options = options || {};
     var r = Math2D.dist(this.x[centerNode], this.y[centerNode], this.x[crankNode], this.y[crankNode]);
     var angle = Math.atan2(this.y[crankNode] - this.y[centerNode], this.x[crankNode] - this.x[centerNode]);
+    var maxTorque = (options.maxTorque !== undefined) ? options.maxTorque : (options.torque !== undefined ? options.torque : Infinity);
     var motor = {
       centerNode: centerNode,
       crankNode: crankNode,
       speed: speed !== undefined ? speed : 2.0, // rad/s
+      targetSpeed: speed !== undefined ? speed : 2.0,
       radius: r,
       angle: angle,
-      active: true
+      active: true,
+      maxTorque: maxTorque,
+      currentTorque: 0,
+      actualSpeed: speed !== undefined ? speed : 2.0,
+      stalled: false
     };
     this.motors.push(motor);
     return motor;
@@ -550,11 +559,47 @@
         this.y0[i] = this.y[i];
       }
 
-      // 2. Advance motors
+      // 1.5 Dynamic Proximity Gear Meshing (e.g. Shifting Gears on Sliders)
+      for (var gi = 0; gi < this.gears.length; gi++) {
+        var g1 = this.gears[gi];
+        var isG1Movable = !this.isFixed[g1.centerNode];
+
+        for (var gj = gi + 1; gj < this.gears.length; gj++) {
+          var g2 = this.gears[gj];
+          var isG2Movable = !this.isFixed[g2.centerNode];
+          if (!isG1Movable && !isG2Movable) continue; // Both fixed gears have static mesh
+
+          var c1x = this.x[g1.centerNode];
+          var c1y = this.y[g1.centerNode];
+          var c2x = this.x[g2.centerNode];
+          var c2y = this.y[g2.centerNode];
+          var dist = Math2D.dist(c1x, c1y, c2x, c2y);
+          var pitchDist = g1.radius + g2.radius;
+          var tol = 4.0; // Meshing engagement window
+
+          var mIdx1 = g1.meshWith.indexOf(gj);
+          var mIdx2 = g2.meshWith.indexOf(gi);
+          var isMeshed = (mIdx1 !== -1);
+
+          if (Math.abs(dist - pitchDist) <= tol) {
+            if (!isMeshed) {
+              g1.meshWith.push(gj);
+              if (mIdx2 === -1) g2.meshWith.push(gi);
+            }
+          } else if (isMeshed && Math.abs(dist - pitchDist) > tol + 3.0) {
+            // Disengage when shifted out of contact
+            g1.meshWith.splice(mIdx1, 1);
+            if (mIdx2 !== -1) g2.meshWith.splice(mIdx2, 1);
+          }
+        }
+      }
+
+      // 2. Advance motors using actual speed (accounting for load torque & stall limits)
       for (var m = 0; m < this.motors.length; m++) {
         var motor = this.motors[m];
         if (!motor.active) continue;
-        motor.angle += motor.speed * h;
+        var effSpeed = motor.stalled ? 0 : (motor.actualSpeed !== undefined ? motor.actualSpeed : motor.speed);
+        motor.angle += effSpeed * h;
         if (motor.angle > Math.PI * 2) motor.angle -= Math.PI * 2;
         if (motor.angle < -Math.PI * 2) motor.angle += Math.PI * 2;
 
@@ -571,7 +616,7 @@
         for (var gi = 0; gi < this.gears.length; gi++) {
           var gear = this.gears[gi];
           if (gear.centerNode === motor.centerNode) {
-            gear.angle += motor.speed * h;
+            gear.angle += effSpeed * h;
             this.propagateGearAngles(gi);
           }
         }
@@ -579,7 +624,7 @@
         // Drive pulley rotation if center is connected to a pulley
         for (var pi = 0; pi < this.pulleys.length; pi++) {
           if (this.pulleys[pi].nodeId === motor.centerNode) {
-            this.pulleys[pi].angle += motor.speed * h;
+            this.pulleys[pi].angle += effSpeed * h;
             this.propagateBeltAngles(pi);
           }
         }
@@ -587,7 +632,7 @@
         // Drive cam rotation if center is connected to a cam
         for (var ci = 0; ci < this.cams.length; ci++) {
           if (this.cams[ci].centerNode === motor.centerNode) {
-            this.cams[ci].angle += motor.speed * h;
+            this.cams[ci].angle += effSpeed * h;
           }
         }
       }
@@ -772,9 +817,13 @@
           var py = this.y[sNode] - ay;
           var proj = px * ux + py * uy;
 
-          // Clamp to stroke limits if configured
-          if (sliderObj.minT !== undefined && proj < sliderObj.minT) proj = sliderObj.minT;
-          if (sliderObj.maxT !== undefined && proj > sliderObj.maxT) proj = sliderObj.maxT;
+          // Clamp to stroke limits only if explicitly configured
+          if (sliderObj.minT !== undefined && sliderObj.minT !== null && isFinite(sliderObj.minT) && proj < sliderObj.minT) {
+            proj = sliderObj.minT;
+          }
+          if (sliderObj.maxT !== undefined && sliderObj.maxT !== null && isFinite(sliderObj.maxT) && proj > sliderObj.maxT) {
+            proj = sliderObj.maxT;
+          }
 
           this.x[sNode] = ax + proj * ux;
           this.y[sNode] = ay + proj * uy;
@@ -866,8 +915,62 @@
         if (!motor.active) continue;
         var cx = this.x[motor.centerNode];
         var cy = this.y[motor.centerNode];
-        this.x[motor.crankNode] = cx + motor.radius * Math.cos(motor.angle);
-        this.y[motor.crankNode] = cy + motor.radius * Math.sin(motor.angle);
+        var idealX = cx + motor.radius * Math.cos(motor.angle);
+        var idealY = cy + motor.radius * Math.sin(motor.angle);
+
+        var rx = idealX - cx;
+        var ry = idealY - cy;
+        // Displacement vector caused by connected linkages/springs on crank pin
+        var dispX = this.x[motor.crankNode] - idealX;
+        var dispY = this.y[motor.crankNode] - idealY;
+        // Reaction force F = -disp / hSq
+        var fReactX = -dispX / hSq;
+        var fReactY = -dispY / hSq;
+        var tauCrank = rx * fReactY - ry * fReactX;
+        var tauLoad = (motor.speed * tauCrank < 0) ? Math.abs(tauCrank) : 0;
+
+        // Also add cam follower reaction torque if motor drives a cam
+        for (var cci = 0; cci < this.camContacts.length; cci++) {
+          var cc = this.camContacts[cci];
+          var cam = this.cams[cc.camIdx];
+          if (cam && cam.centerNode === motor.centerNode && cc.normalForce > 0) {
+            var fn = cc.followerNode;
+            var fdx = this.x[fn] - cx;
+            var fdy = this.y[fn] - cy;
+            var fdist = Math.hypot(fdx, fdy);
+            if (fdist > 1e-4) {
+              var fnx = fdx / fdist;
+              var fny = fdy / fdist;
+              var camFx = cc.normalForce * fnx;
+              var camFy = cc.normalForce * fny;
+              var tauCam = fdx * camFy - fdy * camFx;
+              if (motor.speed * tauCam < 0) {
+                tauLoad += Math.abs(tauCam);
+              }
+            }
+          }
+        }
+
+        // Exponential smoothing on motor load torque
+        motor.currentTorque = motor.currentTorque * 0.85 + tauLoad * 0.15;
+
+        // Check stall condition against maxTorque
+        if (motor.maxTorque !== undefined && motor.maxTorque < Infinity) {
+          if (motor.currentTorque >= motor.maxTorque) {
+            motor.stalled = true;
+            motor.actualSpeed = 0;
+          } else {
+            motor.stalled = false;
+            var sf = Math.max(0, 1.0 - (motor.currentTorque / motor.maxTorque));
+            motor.actualSpeed = motor.speed * sf;
+          }
+        } else {
+          motor.stalled = false;
+          motor.actualSpeed = motor.speed;
+        }
+
+        this.x[motor.crankNode] = idealX;
+        this.y[motor.crankNode] = idealY;
       }
       for (var ai = 0; ai < this.attachedNodes.length; ai++) {
         var att = this.attachedNodes[ai];

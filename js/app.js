@@ -166,7 +166,7 @@
     // 4. Add sliders
     for (var s = 0; s < model.sliders.length; s++) {
       var sl = model.sliders[s];
-      physics.addSlider(sl.node, sl.aNode, sl.bNode, sl.minT, sl.maxT);
+      physics.addSlider(sl.node, sl.aNode, sl.bNode, sl.minT, sl.maxT, sl);
     }
 
     // 5. Add gears
@@ -245,7 +245,7 @@
     // 7. Add motors
     for (var m = 0; m < model.motors.length; m++) {
       var mot = model.motors[m];
-      physics.addMotor(mot.centerNode, mot.crankNode, mot.speed);
+      physics.addMotor(mot.centerNode, mot.crankNode, mot.speed, mot);
     }
 
     timeline.reset();
@@ -451,6 +451,8 @@
         selectTool('add_spring');
       } else if (e.key === 's' || e.key === 'S') {
         selectTool('add_slider');
+      } else if (e.key === 'l' || e.key === 'L') {
+        selectTool('add_lever');
       } else if (e.key === 'g' || e.key === 'G') {
         selectTool('add_gear');
       } else if (e.key === 'm' || e.key === 'M') {
@@ -565,6 +567,20 @@
         label: 'Mount Pulley Wheel Here',
         action: function() { editor.addPulley(n.id, 35); }
       });
+      var slIdx = editor.sliders.findIndex(function(s) { return s.node === n.id; });
+      if (slIdx !== -1) {
+        items.push({
+          label: 'Configure Slider Rail & Stroke...',
+          action: function() { openInspector('slider', { index: slIdx, slider: editor.sliders[slIdx] }); }
+        });
+      }
+      var motIdx = editor.motors.findIndex(function(m) { return m.centerNode === n.id || m.crankNode === n.id; });
+      if (motIdx !== -1) {
+        items.push({
+          label: 'Configure Motor (Speed & Torque)...',
+          action: function() { openInspector('motor', { index: motIdx, motor: editor.motors[motIdx] }); }
+        });
+      }
       items.push({
         label: 'Delete Node',
         danger: true,
@@ -749,6 +765,12 @@
         }
       });
       items.push({
+        label: 'Add Shift / Control Lever',
+        action: function() {
+          editor.addLever(pos.x, pos.y);
+        }
+      });
+      items.push({
         label: 'Clear All Motion Trails',
         action: function() { editor.renderer.clearTraces(); editor.render(physics); }
       });
@@ -898,16 +920,54 @@
     } else if (type === 'slider') {
       var sl = data.slider || data.item || editor.sliders[data.index];
       titleEl.textContent = 'Configure Linear Slider Rail';
+      var hasMin = (sl.minT !== undefined && sl.minT !== null && isFinite(sl.minT));
+      var hasMax = (sl.maxT !== undefined && sl.maxT !== null && isFinite(sl.maxT));
       bodyEl.innerHTML = 
-        '<div class="form-group"><label>Min Travel Limit</label><input type="number" id="insMinT" value="' + (sl.minT || -1000) + '" step="5"></div>' +
-        '<div class="form-group"><label>Max Travel Limit</label><input type="number" id="insMaxT" value="' + (sl.maxT || 1000) + '" step="5"></div>' +
+        '<div class="form-group"><label><input type="checkbox" id="insEnableStroke" ' + (hasMin || hasMax ? 'checked' : '') + '> Enforce End-Stop Travel Limits</label></div>' +
+        '<div class="form-group"><label>Min Travel Limit</label><input type="number" id="insMinT" value="' + (hasMin ? sl.minT : -100) + '" step="5"></div>' +
+        '<div class="form-group"><label>Max Travel Limit</label><input type="number" id="insMaxT" value="' + (hasMax ? sl.maxT : 100) + '" step="5"></div>' +
         '<div class="form-group"><label>Friction Coefficient</label><input type="number" id="insFric" value="' + (sl.friction || 0) + '" step="0.05" min="0"></div>';
 
       saveHandler = function() {
         editor.saveState();
-        sl.minT = parseFloat(document.getElementById('insMinT').value) || -1000;
-        sl.maxT = parseFloat(document.getElementById('insMaxT').value) || 1000;
+        var enableStroke = document.getElementById('insEnableStroke').checked;
+        if (enableStroke) {
+          sl.minT = parseFloat(document.getElementById('insMinT').value) || -100;
+          sl.maxT = parseFloat(document.getElementById('insMaxT').value) || 100;
+        } else {
+          sl.minT = undefined;
+          sl.maxT = undefined;
+        }
         sl.friction = Math.max(0, parseFloat(document.getElementById('insFric').value) || 0);
+        editor._notifyChange();
+      };
+    } else if (type === 'motor') {
+      var mot = data.motor || data.item || editor.motors[data.index];
+      titleEl.textContent = 'Configure Motor';
+      var isUnlimited = (mot.maxTorque === undefined || mot.maxTorque === null || mot.maxTorque === Infinity);
+      var rpm = Math.round((mot.speed || 2.5) * 60 / (2 * Math.PI));
+      bodyEl.innerHTML = 
+        '<div class="form-group"><label>Speed (rad/s)</label><input type="number" id="insSpeed" value="' + (mot.speed || 2.5) + '" step="0.5"></div>' +
+        '<div class="form-group"><label>Speed (RPM)</label><input type="number" id="insRPM" value="' + rpm + '" step="5"></div>' +
+        '<div class="form-group"><label><input type="checkbox" id="insUnlimitedTorque" ' + (isUnlimited ? 'checked' : '') + '> Unlimited Torque (Rigid Kinematic)</label></div>' +
+        '<div class="form-group"><label>Max Stall Torque (N*m / torque units)</label><input type="number" id="insMaxTorque" value="' + (isUnlimited ? 5000 : mot.maxTorque) + '" step="500" min="10"></div>';
+
+      var speedInput = document.getElementById('insSpeed');
+      var rpmInput = document.getElementById('insRPM');
+      speedInput.addEventListener('input', function() {
+        var spd = parseFloat(speedInput.value) || 0;
+        rpmInput.value = Math.round(spd * 60 / (2 * Math.PI));
+      });
+      rpmInput.addEventListener('input', function() {
+        var rVal = parseFloat(rpmInput.value) || 0;
+        speedInput.value = (rVal * 2 * Math.PI / 60).toFixed(2);
+      });
+
+      saveHandler = function() {
+        editor.saveState();
+        var unlimited = document.getElementById('insUnlimitedTorque').checked;
+        mot.speed = parseFloat(document.getElementById('insSpeed').value) || 2.5;
+        mot.maxTorque = unlimited ? Infinity : (parseFloat(document.getElementById('insMaxTorque').value) || 5000);
         editor._notifyChange();
       };
     } else if (type === 'geneva') {

@@ -212,12 +212,24 @@
   };
 
   MechanismEditor.prototype.findSliderNear = function(wx, wy, threshold) {
-    threshold = (threshold || 14) / this.zoom;
+    threshold = (threshold || 16) / this.zoom;
     for (var i = this.sliders.length - 1; i >= 0; i--) {
       var s = this.sliders[i];
       var sn = this.getNodeById(s.node);
-      if (sn && Math2D.dist(wx, wy, sn.x, sn.y) <= threshold * 1.5) {
+      if (sn && Math2D.dist(wx, wy, sn.x, sn.y) <= threshold * 1.8) {
         return i;
+      }
+      var na = this.getNodeById(s.aNode);
+      var nb = this.getNodeById(s.bNode);
+      if (na && nb) {
+        var proj = [];
+        Math2D.projectPointOnLine(wx, wy, na.x, na.y, nb.x, nb.y, proj);
+        if (proj[2] >= -0.05 && proj[2] <= 1.05) {
+          var d = Math2D.dist(wx, wy, proj[0], proj[1]);
+          if (d <= Math.max(threshold, 18 / this.zoom)) {
+            return i;
+          }
+        }
       }
     }
     return -1;
@@ -390,23 +402,60 @@
     this._notifyChange();
   };
 
-  MechanismEditor.prototype.addSlider = function(nodeId, aNodeId, bNodeId) {
+  MechanismEditor.prototype.addSlider = function(nodeId, aNodeId, bNodeId, options) {
+    options = options || {};
     this.saveState();
     this.sliders.push({
       node: nodeId,
       aNode: aNodeId,
       bNode: bNodeId,
-      minT: -1000,
-      maxT: 1000
+      minT: (options.minT !== undefined) ? options.minT : undefined,
+      maxT: (options.maxT !== undefined) ? options.maxT : undefined,
+      friction: options.friction || 0
     });
     this._notifyChange();
   };
 
-  MechanismEditor.prototype.addGear = function(centerId, radius, teeth) {
+  MechanismEditor.prototype.addLever = function(pivotX, pivotY, options) {
+    this.saveState();
+    options = options || {};
+    var armLength = options.armLength || 50;
+    var handleLength = options.handleLength || 60;
+    var angle = options.angle !== undefined ? options.angle : -Math.PI / 2; // Pointing upwards
+
+    // Pivot pin (ground anchor)
+    var pId = this.addNode(pivotX, pivotY, true);
+
+    // Handle node (draggable knob, pointing in direction of angle)
+    var hX = pivotX + handleLength * Math.cos(angle);
+    var hY = pivotY + handleLength * Math.sin(angle);
+    var hId = this.addNode(hX, hY, false);
+    var hNode = this.getNodeById(hId);
+    if (hNode) hNode.isHandle = true;
+
+    // Output arm node (pointing opposite)
+    var outAngle = angle + Math.PI;
+    var oX = pivotX + armLength * Math.cos(outAngle);
+    var oY = pivotY + armLength * Math.sin(outAngle);
+    var oId = this.addNode(oX, oY, false);
+
+    // Rigid bracket connecting pivot, handle, and output arm
+    this.addRigidBracket(hId, pId, oId);
+
+    this._notifyChange();
+    return { pivotNode: pId, handleNode: hId, outputNode: oId };
+  };
+
+  MechanismEditor.prototype.addGear = function(centerId, radius, teeth, options) {
     this.saveState();
     var cNode = this.getNodeById(centerId);
     if (!cNode) return;
-    cNode.fixed = true; // Gears have fixed shafts
+    options = options || {};
+    if (options.fixed !== undefined) {
+      cNode.fixed = !!options.fixed;
+    } else if (cNode.fixed === undefined) {
+      cNode.fixed = true; // Default to fixed unless already specified false (e.g. on a slider)
+    }
 
     radius = radius || 45;
     teeth = teeth || Math.max(8, Math.round(radius / 3));
@@ -469,12 +518,14 @@
     this.attachNodeToGear(pinId, gearIdx);
   };
 
-  MechanismEditor.prototype.addMotor = function(centerId, crankId, speed) {
+  MechanismEditor.prototype.addMotor = function(centerId, crankId, speed, options) {
+    options = options || {};
     this.saveState();
     this.motors.push({
       centerNode: centerId,
       crankNode: crankId,
-      speed: speed !== undefined ? speed : 2.5
+      speed: speed !== undefined ? speed : 2.5,
+      maxTorque: (options.maxTorque !== undefined) ? options.maxTorque : (options.torque !== undefined ? options.torque : Infinity)
     });
     this._notifyChange();
   };
@@ -877,6 +928,19 @@
           }
           return;
         }
+        var nearSlider = self.findSliderNear(w.x, w.y);
+        if (nearSlider !== -1) {
+          var sl = self.sliders[nearSlider];
+          self.selectedNodeId = sl.node;
+          self.isDragging = true;
+          if (self.onHumanInputStart) {
+            self.onHumanInputStart('slider', sl.node);
+          }
+          if (self.onDirectDragNode) {
+            self.onDirectDragNode(sl.node, w.x, w.y);
+          }
+          return;
+        }
         self.isPanning = true;
         self.panStartX = e.clientX - self.panX;
         self.panStartY = e.clientY - self.panY;
@@ -915,6 +979,11 @@
             self.addMotor(self._motorCenter, elem.index);
             self._motorCenter = null;
           }
+        } else if (self.activeTool === 'add_lever') {
+          self.addLever(w.x, w.y);
+          self.setTool('select');
+          self.render();
+          return;
         } else if (self.activeTool === 'add_slider' && elem.type === 'node') {
           if (!self._sliderRailStart) {
             self._sliderRailStart = elem.index;
@@ -1031,6 +1100,9 @@
           } else if (tool === 'add_gear') {
             var cId = self.addNode(ex, ey, true);
             self.addGear(cId, 45, 15);
+          } else if (tool === 'add_lever') {
+            self.addLever(ex, ey);
+            self.setTool('select');
           }
         }
         self.isPotentialPan = false;
@@ -1146,14 +1218,29 @@
       var w = self.screenToWorld(e.clientX, e.clientY);
       var nearNode = self.findNodeNear(w.x, w.y);
       var nearGear = self.findGearNear(w.x, w.y);
+      var nearSlider = self.findSliderNear(w.x, w.y);
       var nearRod = self.findRodNear(w.x, w.y);
+      var nearSpring = self.findSpringNear(w.x, w.y);
+      var nearCam = self.findCamNear(w.x, w.y);
+      var nearPulley = self.findPulleyNear(w.x, w.y);
+      var nearGeneva = self.findGenevaNear(w.x, w.y);
 
       if (nearNode !== -1 && self.onConfigureElement) {
         self.onConfigureElement('node', self.getNodeById(nearNode));
+      } else if (nearSlider !== -1 && self.onConfigureElement) {
+        self.onConfigureElement('slider', { index: nearSlider, slider: self.sliders[nearSlider] });
       } else if (nearGear !== -1 && self.onConfigureElement) {
         self.onConfigureElement('gear', { index: nearGear, gear: self.gears[nearGear] });
       } else if (nearRod !== -1 && self.onConfigureElement) {
         self.onConfigureElement('rod', { index: nearRod, rod: self.rods[nearRod] });
+      } else if (nearSpring !== -1 && self.onConfigureElement) {
+        self.onConfigureElement('spring', { index: nearSpring, spring: self.springs[nearSpring] });
+      } else if (nearCam !== -1 && self.onConfigureElement) {
+        self.onConfigureElement('cam', { index: nearCam, cam: self.cams[nearCam] });
+      } else if (nearPulley !== -1 && self.onConfigureElement) {
+        self.onConfigureElement('pulley', { index: nearPulley, pulley: self.pulleys[nearPulley] });
+      } else if (nearGeneva !== -1 && self.onConfigureElement) {
+        self.onConfigureElement('geneva', { index: nearGeneva, geneva: self.genevas[nearGeneva] });
       }
     });
 
@@ -1388,7 +1475,7 @@
       var pcr = nodePositions[mot.crankNode];
       if (pc && pcr) {
         var rDist = Math2D.dist(pc.x, pc.y, pcr.x, pcr.y);
-        this.renderer.drawMotorIndicator(ctx, pc.x, pc.y, rDist, mot.speed);
+        this.renderer.drawMotorIndicator(ctx, pc.x, pc.y, rDist, mot.speed, { stalled: mot.stalled });
       }
     }
 
@@ -1405,13 +1492,20 @@
           this.renderer.drawGroundAnchor(ctx, pos.x, pos.y, 16);
         }
       } else {
+        var isH = !!n.isHandle;
         ctx.beginPath();
-        ctx.arc(pos.x, pos.y, 7, 0, Math.PI * 2);
-        ctx.fillStyle = (n.id === this.selectedNodeId) ? '#f59e0b' : '#0f172a';
+        ctx.arc(pos.x, pos.y, isH ? 9 : 7, 0, Math.PI * 2);
+        ctx.fillStyle = (n.id === this.selectedNodeId) ? '#f59e0b' : (isH ? '#ec4899' : '#0f172a');
         ctx.fill();
         ctx.lineWidth = 2;
         ctx.strokeStyle = '#ffffff';
         ctx.stroke();
+        if (isH) {
+          ctx.beginPath();
+          ctx.arc(pos.x, pos.y, 3.5, 0, Math.PI * 2);
+          ctx.fillStyle = '#ffffff';
+          ctx.fill();
+        }
       }
 
       // Tracked node ring indicator
@@ -1569,9 +1663,22 @@
         var ssl = this.sliders[sel.index];
         if (ssl) {
           var ssnode = nodePositions[ssl.node];
+          var ssna = nodePositions[ssl.aNode];
+          var ssnb = nodePositions[ssl.bNode];
+          if (ssna && ssnb) {
+            ctx.beginPath();
+            ctx.moveTo(ssna.x, ssna.y);
+            ctx.lineTo(ssnb.x, ssnb.y);
+            ctx.strokeStyle = '#f59e0b';
+            ctx.lineWidth = 26;
+            ctx.lineCap = 'round';
+            ctx.globalAlpha = 0.35;
+            ctx.stroke();
+            ctx.globalAlpha = 1.0;
+          }
           if (ssnode) {
             ctx.beginPath();
-            ctx.arc(ssnode.x, ssnode.y, 16, 0, Math.PI * 2);
+            ctx.arc(ssnode.x, ssnode.y, 18, 0, Math.PI * 2);
             ctx.strokeStyle = '#f59e0b';
             ctx.lineWidth = 2.5;
             ctx.setLineDash([4, 3]);
@@ -1890,6 +1997,49 @@
         { centerNode: 0, crankNode: 0, speed: 4.0 }
       ],
       brackets: []
+    },
+
+    // 9. Multi-Speed Gearbox & Shifter Transmission (Dynamic Meshing & Shift Lever)
+    gearbox: {
+      version: '2.0',
+      nodes: [
+        { id: 0, x: -55, y: -50, fixed: true, mass: 1 },    // Input Shaft 1: 1st Drive Pinion
+        { id: 1, x: -75, y: 50, fixed: true, mass: 1 },     // Input Shaft 2: 2nd Drive Gear
+        { id: 2, x: 25, y: -110, fixed: true, mass: 1 },    // Shifter slider rail start
+        { id: 3, x: 25, y: 110, fixed: true, mass: 1 },     // Shifter slider rail end
+        { id: 4, x: 25, y: -50, fixed: false, mass: 1 },    // Shifter slider carriage & Shift Gear
+        { id: 5, x: 130, y: 0, fixed: true, mass: 1 },      // Shift Lever Fulcrum Pivot
+        { id: 6, x: 130, y: 80, fixed: false, mass: 1, isHandle: true }, // Shift Knob (Drag to Shift)
+        { id: 7, x: 130, y: -50, fixed: false, mass: 1 }    // Shift Lever Output Linkage Arm
+      ],
+      rods: [
+        { a: 7, b: 4, length: 105, width: 9, color: '#64748b' } // Linkage rod from lever to slider
+      ],
+      springs: [],
+      sliders: [
+        { node: 4, aNode: 2, bNode: 3, minT: 25, maxT: 195 }
+      ],
+      gears: [
+        { centerNode: 0, radius: 35, teeth: 14, meshWith: [] }, // Gear 0 (1st speed drive pinion)
+        { centerNode: 1, radius: 55, teeth: 22, meshWith: [] }, // Gear 1 (2nd speed drive gear)
+        { centerNode: 4, radius: 45, teeth: 18, meshWith: [] }  // Gear 2 (Movable shifter gear on slider)
+      ],
+      pulleys: [
+        { nodeId: 0, radius: 25 },
+        { nodeId: 1, radius: 25 }
+      ],
+      belts: [
+        { pulleyA: 0, pulleyB: 1, crossed: false, width: 8 }
+      ],
+      axles: [],
+      cams: [],
+      camContacts: [],
+      motors: [
+        { centerNode: 0, crankNode: 0, speed: 3.0, maxTorque: 8000 }
+      ],
+      brackets: [
+        { a: 6, b: 5, c: 7, width: 14, color: '#6366f1' } // Rigid shift lever
+      ]
     }
   };
 

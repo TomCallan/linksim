@@ -457,4 +457,165 @@ console.log('Running Linksim Physics & Timeline Test Suite...');
   console.log('PASS: Geneva Wheel Vector Polygon Profile & Cam Integration');
 }
 
+// Test 18: Slider free motion invariance (no natural return to 0)
+{
+  const sim = new PhysicsSystem();
+  // Rail from (0, 0) to (200, 0)
+  const a = sim.addNode(0, 0, true);
+  const b = sim.addNode(200, 0, true);
+  const s = sim.addNode(120, 0, false);
+  sim.addSlider(s, a, b);
+
+  // Initial step with zero external forces
+  sim.step(1 / 60);
+  assert(Math.abs(sim.x[s] - 120) < 1e-4, `Slider drifted from initial position: ${sim.x[s]}`);
+
+  // Displace slider manually to x = 165
+  sim.x[s] = 165;
+  // Step simulation for 60 frames (1 second) without any springs
+  for (let f = 0; f < 60; f++) {
+    sim.step(1 / 60);
+  }
+  // Slider MUST remain at x = 165 with NO restoring force towards 0
+  assert(Math.abs(sim.x[s] - 165) < 1e-4, `Slider exhibited natural return to 0! Expected 165, got ${sim.x[s]}`);
+
+  // Now attach a spring from (0, 0) to slider with restLength = 50 and stiffness = 200
+  sim.addSpring(a, s, 50, 200);
+  for (let f = 0; f < 30; f++) {
+    sim.step(1 / 60);
+  }
+  // Spring should pull slider towards 50
+  assert(sim.x[s] < 160, `Spring failed to restore slider: x is ${sim.x[s]}`);
+  console.log('PASS: Slider free motion invariance (restoring force only from springs)');
+}
+
+// Test 19: Motor torque customization and stall dynamics under spring load
+{
+  const sim = new PhysicsSystem();
+  const center = sim.addNode(0, 0, true);
+  const crank = sim.addNode(0, 30, false); // Radius 30
+  // Motor with target speed 3.0 rad/s and finite maxTorque = 800
+  const mot = sim.addMotor(center, crank, 3.0, { maxTorque: 800 });
+  // Resisting spring anchor at (0, -70) with restLength = 100
+  const springAnchor = sim.addNode(0, -70, true);
+  sim.addSpring(crank, springAnchor, 100, 30); // 30 N/m spring
+
+  // Run simulation steps
+  let stalledOccurred = false;
+  for (let f = 0; f < 60; f++) {
+    sim.step(1 / 60);
+    if (mot.stalled) {
+      stalledOccurred = true;
+      break;
+    }
+  }
+  assert.strictEqual(stalledOccurred, true, 'Motor with finite torque failed to stall under excessive spring load');
+  assert(mot.currentTorque >= 800, `Reaction torque did not reach stall threshold: ${mot.currentTorque}`);
+  assert.strictEqual(mot.actualSpeed, 0, `Stalled motor speed should be 0, got ${mot.actualSpeed}`);
+
+  // Now set motor maxTorque to Infinity (unlimited torque)
+  mot.maxTorque = Infinity;
+  for (let f = 0; f < 20; f++) {
+    sim.step(1 / 60);
+  }
+  assert.strictEqual(mot.stalled, false, 'Motor failed to recover from stall when maxTorque was unlimited');
+  assert(mot.actualSpeed > 0, `Recovered motor speed should be positive: ${mot.actualSpeed}`);
+  console.log('PASS: Motor torque limit, stall dynamics, and recovery under load');
+}
+
+// Test 20: Dynamic gear meshing on sliders (shifter transmission)
+{
+  const sim = new PhysicsSystem();
+  // Fixed Drive Gear 1 at (0, 0), radius 30 (teeth 12)
+  const g1Center = sim.addNode(0, 0, true);
+  const gear1 = sim.addGear(g1Center, 30, 12);
+  sim.addMotor(g1Center, g1Center, 4.0);
+
+  // Slider rail parallel to y axis at x = 70
+  const railA = sim.addNode(70, -100, true);
+  const railB = sim.addNode(70, 100, true);
+  // Movable shifter gear center on slider, radius 40 (teeth 16)
+  const shifterCenter = sim.addNode(70, 0, false);
+  sim.addSlider(shifterCenter, railA, railB);
+  const shifterGear = sim.addGear(shifterCenter, 40, 16);
+
+  // Initially at (70, 0): distance is 70.
+  // Pitch contact distance is 30 + 40 = 70!
+  sim.step(1 / 60);
+  assert(gear1.meshWith.includes(1), 'Shifter gear did not dynamically mesh at pitch distance');
+  assert(shifterGear.meshWith.includes(0), 'Drive gear did not dynamically mesh with shifter');
+  assert.notStrictEqual(shifterGear.angle, 0, 'Meshed shifter gear should rotate with motor');
+
+  // Now slide shifter gear away to y = 50 (Neutral)
+  sim.y[shifterCenter] = 50;
+  sim.step(1 / 60);
+  assert(!gear1.meshWith.includes(1), 'Shifter gear failed to unmesh when shifted to neutral');
+  assert(!shifterGear.meshWith.includes(0), 'Drive gear still linked to disengaged shifter');
+
+  const neutralAngle = shifterGear.angle;
+  // Step again in neutral: drive gear turns, shifter gear should NOT turn
+  sim.step(1 / 60);
+  assert.strictEqual(shifterGear.angle, neutralAngle, 'Disengaged shifter gear should not turn in neutral');
+
+  console.log('PASS: Dynamic gear meshing and disengaging on sliders');
+}
+
+// Test 21: Gearbox preset multi-speed transmission and shift lever
+{
+  const MechanismEditor = require('../js/editor.js');
+  assert(MechanismEditor.Presets.gearbox, 'gearbox preset is missing from MechanismEditor.Presets');
+  const preset = MechanismEditor.Presets.gearbox;
+
+  assert(preset.sliders.length >= 1, 'gearbox preset should have a slider');
+  assert(preset.gears.length >= 3, 'gearbox preset should have at least 3 gears');
+  assert(preset.motors.length >= 1, 'gearbox preset should have a motor');
+  assert(preset.brackets.length >= 1, 'gearbox preset should have a shift lever bracket');
+
+  // Load into physics simulation
+  const sim = new PhysicsSystem();
+  for (let i = 0; i < preset.nodes.length; i++) {
+    const n = preset.nodes[i];
+    sim.addNode(n.x, n.y, n.fixed, n.mass);
+  }
+  for (let r = 0; r < preset.rods.length; r++) {
+    const rod = preset.rods[r];
+    sim.addRod(rod.a, rod.b, rod.length);
+  }
+  for (let s = 0; s < preset.sliders.length; s++) {
+    const sl = preset.sliders[s];
+    sim.addSlider(sl.node, sl.aNode, sl.bNode, sl.minT, sl.maxT, sl);
+  }
+  for (let g = 0; g < preset.gears.length; g++) {
+    const gear = preset.gears[g];
+    const gObj = sim.addGear(gear.centerNode, gear.radius, gear.teeth);
+    if (gear.meshWith) gObj.meshWith = gear.meshWith.slice();
+  }
+  for (let p = 0; p < (preset.pulleys || []).length; p++) {
+    const pul = preset.pulleys[p];
+    sim.addPulley(pul.nodeId, pul.radius);
+  }
+  for (let b = 0; b < (preset.belts || []).length; b++) {
+    const blt = preset.belts[b];
+    sim.addBelt(blt.pulleyA, blt.pulleyB, blt);
+  }
+  for (let br = 0; br < preset.brackets.length; br++) {
+    const b = preset.brackets[br];
+    sim.addRigidBracket(b.a, b.b, b.c);
+  }
+  for (let m = 0; m < preset.motors.length; m++) {
+    const mot = preset.motors[m];
+    sim.addMotor(mot.centerNode, mot.crankNode, mot.speed, mot);
+  }
+
+  // Run 10 steps in initial position (1st gear)
+  for (let f = 0; f < 10; f++) {
+    sim.step(1 / 60);
+  }
+  // Gear 2 (shifter gear on slider node 4) should be dynamically meshed with Gear 0
+  assert(sim.gears[2].meshWith.includes(0), 'Shifter gear 2 was not meshed with 1st speed gear 0');
+  assert(sim.gears[2].angle !== 0, 'Shifter gear did not rotate when in 1st gear');
+
+  console.log('PASS: Multi-speed Gearbox preset loading and dynamic transmission');
+}
+
 console.log('All tests passed successfully!');

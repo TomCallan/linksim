@@ -105,7 +105,7 @@
           if (spec.motors) {
             for (var m = 0; m < spec.motors.length; m++) {
               var mot = spec.motors[m];
-              physics.addMotor(mot.centerNode, mot.crankNode, mot.speed);
+              physics.addMotor(mot.centerNode, mot.crankNode, mot.speed, mot);
             }
           }
           if (spec.gravity) {
@@ -141,24 +141,28 @@
       },
 
       addSlider: function(node, aNode, bNode, minT, maxT, friction) {
-        if (editor) return editor.addSlider(node, aNode, bNode);
+        if (editor) return editor.addSlider(node, aNode, bNode, { minT: minT, maxT: maxT, friction: friction });
         if (physics) {
-          var s = physics.addSlider(node, aNode, bNode, minT, maxT);
-          if (friction) s.friction = friction;
+          var s = physics.addSlider(node, aNode, bNode, minT, maxT, { friction: friction });
           return s;
         }
         return null;
       },
 
-      addGear: function(centerNode, radius, teeth) {
-        if (editor) return editor.addGear(centerNode, radius, teeth);
+      addLever: function(pivotX, pivotY, options) {
+        if (editor) return editor.addLever(pivotX, pivotY, options);
+        return null;
+      },
+
+      addGear: function(centerNode, radius, teeth, options) {
+        if (editor) return editor.addGear(centerNode, radius, teeth, options);
         if (physics) return physics.addGear(centerNode, radius, teeth);
         return null;
       },
 
-      addMotor: function(centerNode, crankNode, speed) {
-        if (editor) return editor.addMotor(centerNode, crankNode, speed);
-        if (physics) return physics.addMotor(centerNode, crankNode, speed);
+      addMotor: function(centerNode, crankNode, speed, options) {
+        if (editor) return editor.addMotor(centerNode, crankNode, speed, options);
+        if (physics) return physics.addMotor(centerNode, crankNode, speed, options);
         return null;
       },
 
@@ -291,7 +295,27 @@
           return { centerNode: g.centerNode, radius: g.radius, teeth: g.teeth, angle: g.angle };
         });
         var motors = physics.motors.map(function(m) {
-          return { centerNode: m.centerNode, crankNode: m.crankNode, speed: m.speed, angle: m.angle, active: m.active };
+          return {
+            centerNode: m.centerNode,
+            crankNode: m.crankNode,
+            speed: m.speed,
+            actualSpeed: m.actualSpeed !== undefined ? m.actualSpeed : m.speed,
+            angle: m.angle,
+            active: m.active,
+            maxTorque: m.maxTorque,
+            currentTorque: m.currentTorque || 0,
+            stalled: !!m.stalled
+          };
+        });
+        var sliders = physics.sliders.map(function(s) {
+          return {
+            node: s.node,
+            aNode: s.aNode,
+            bNode: s.bNode,
+            minT: s.minT,
+            maxT: s.maxT,
+            friction: s.friction
+          };
         });
         var genevas = physics.genevas.map(function(gen) {
           return {
@@ -328,6 +352,7 @@
           nodes: nodes,
           rods: rods,
           springs: springs,
+          sliders: sliders,
           gears: gears,
           motors: motors,
           genevas: genevas,
