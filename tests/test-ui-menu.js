@@ -120,5 +120,29 @@ console.log('Running UI Context Menu & CSS Sanity Test Suite...');
   console.log('PASS: All scripts evaluate cleanly in browser scope without module/exports');
 }
 
+// Test 4: Reactive Top Bar and Bottom Bar CSS & Structure Sanity
+{
+  const htmlPath = path.join(__dirname, '../index.html');
+  const html = fs.readFileSync(htmlPath, 'utf8');
+
+  // Verify responsive media queries exist for header and playback-bar
+  assert(html.includes('@media (max-width: 1150px)'), 'Missing 1150px media query for editTools toolbar wrap');
+  assert(html.includes('@media (max-width: 1060px)'), 'Missing 1060px media query for options-bar wrap');
+  assert(html.includes('@media (max-width: 680px)'), 'Missing 680px media query for mobile playback-bar layout');
+  assert(html.includes('@media (max-width: 480px)'), 'Missing 480px media query for ultra-narrow screens');
+
+  // Verify responsive classes and elements
+  assert(html.includes('class="preset-label"'), 'Expected .preset-label in header for responsive display');
+  assert(html.includes('class="speed-label"'), 'Expected .speed-label in playback controls for responsive display');
+  assert(html.includes('class="btn-text-full"'), 'Expected .btn-text-full for responsive step button labels');
+  assert(html.includes('.options-bar label:has(input:checked)'), 'Expected toggle pill active state selector in CSS');
+
+  // Verify flex wrapping is enabled on both bars to prevent horizontal overflow clipping
+  assert(html.includes('flex-wrap: wrap'), 'Expected flex-wrap: wrap on responsive bars');
+
+  console.log('PASS: Reactive top bar and bottom bar rules and markup verified');
+}
+
 console.log('All UI context menu and browser loading tests passed!');
+
 

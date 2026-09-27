@@ -21,25 +21,32 @@
       flex-direction: column;
     }
     header {
-      height: 42px;
       min-height: 42px;
+      height: auto;
       max-width: 100vw;
       width: 100%;
       box-sizing: border-box;
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
-      padding: 0 8px;
+      justify-content: space-between;
+      padding: 4px 10px;
       background: #ffffff;
       border-bottom: 1px solid #e2e8f0;
       z-index: 10;
-      gap: 5px;
-      overflow: hidden;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
       flex-shrink: 0;
     }
     .brand {
       display: flex;
       align-items: center;
-      gap: 5px;
+      gap: 6px;
       flex-shrink: 0;
     }
     h1 {
@@ -55,6 +62,7 @@
       font-weight: 600;
       padding: 1px 5px;
       border-radius: 9999px;
+      white-space: nowrap;
     }
     .mode-toggle {
       display: flex;
@@ -74,6 +82,7 @@
       cursor: pointer;
       color: #475569;
       transition: all 0.15s ease;
+      white-space: nowrap;
     }
     .mode-btn.active {
       background: #ffffff;
@@ -83,32 +92,40 @@
     .toolbar {
       display: flex;
       align-items: center;
-      gap: 2px;
-      flex-shrink: 0;
+      gap: 3px;
+      flex-wrap: wrap;
     }
     .toolbar button {
-      padding: 3px 5px;
+      padding: 3px 6px;
       font-size: 0.72rem;
       border-radius: 4px;
+      font-weight: 500;
+      white-space: nowrap;
     }
     .header-right {
       display: flex;
       align-items: center;
-      gap: 4px;
-      margin-left: auto;
+      gap: 6px;
       flex-shrink: 0;
     }
     .header-right button {
-      padding: 3px 6px;
+      padding: 3px 7px;
       font-size: 0.72rem;
+    }
+    .preset-label {
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: #475569;
+      white-space: nowrap;
     }
     #presetSelect {
       max-width: 140px;
+      min-width: 90px;
       text-overflow: ellipsis;
       overflow: hidden;
       white-space: nowrap;
       font-size: 0.74rem;
-      padding: 3px 4px;
+      padding: 3px 5px;
     }
     button, select {
       font-family: inherit;
@@ -181,19 +198,20 @@
       box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
     .playback-bar {
-      height: 46px;
-      min-height: 46px;
+      min-height: 44px;
+      height: auto;
       max-width: 100vw;
       width: 100%;
       box-sizing: border-box;
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
-      padding: 0 10px;
+      justify-content: space-between;
+      padding: 4px 10px;
       background: #ffffff;
       border-top: 1px solid #e2e8f0;
       gap: 8px;
       z-index: 10;
-      overflow: hidden;
       flex-shrink: 0;
     }
     .playback-controls {
@@ -203,15 +221,33 @@
       flex-shrink: 0;
     }
     .playback-controls button {
-      padding: 3px 8px;
-      font-size: 0.78rem;
+      padding: 4px 8px;
+      font-size: 0.76rem;
+      border-radius: 4px;
     }
-    .playback-controls select {
+    #btnPlay {
+      min-width: 58px;
+      font-weight: 600;
+      background: #2563eb;
+      color: #ffffff;
+      border-color: #1d4ed8;
+    }
+    #btnPlay:hover {
+      background: #1d4ed8;
+    }
+    .speed-label {
+      margin-left: 4px;
+      font-size: 0.75rem;
+      color: #475569;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+    #speedSelect {
       padding: 2px 4px;
-      font-size: 0.78rem;
+      font-size: 0.76rem;
     }
     .scrubber-wrap {
-      flex: 1;
+      flex: 1 1 200px;
       display: flex;
       align-items: center;
       gap: 8px;
@@ -220,6 +256,7 @@
     .slider {
       flex: 1;
       height: 6px;
+      min-width: 70px;
       accent-color: #2563eb;
       cursor: pointer;
     }
@@ -227,28 +264,165 @@
       font-family: monospace;
       font-size: 0.72rem;
       color: #64748b;
-      min-width: 95px;
+      min-width: 75px;
       text-align: right;
       white-space: nowrap;
+      flex-shrink: 0;
     }
     .options-bar {
       display: flex;
       align-items: center;
-      gap: 8px;
-      font-size: 0.73rem;
+      gap: 5px;
+      font-size: 0.72rem;
       color: #475569;
       border-left: 1px solid #e2e8f0;
       padding-left: 8px;
       flex-shrink: 0;
     }
     .options-bar label {
-      display: flex;
+      display: inline-flex;
       align-items: center;
-      gap: 3px;
+      gap: 4px;
+      padding: 3px 6px;
+      border-radius: 4px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      color: #475569;
+      font-size: 0.71rem;
+      font-weight: 500;
       cursor: pointer;
       white-space: nowrap;
       user-select: none;
+      transition: all 0.12s ease;
     }
+    .options-bar label:hover {
+      background: #f1f5f9;
+      border-color: #cbd5e1;
+      color: #0f172a;
+    }
+    .options-bar label:has(input:checked) {
+      background: #eff6ff;
+      border-color: #93c5fd;
+      color: #1d4ed8;
+      font-weight: 600;
+    }
+    .options-bar input[type="checkbox"] {
+      margin: 0;
+      accent-color: #2563eb;
+      cursor: pointer;
+    }
+
+    /* Responsive Bar Media Queries */
+    @media (max-width: 1150px) {
+      #editTools {
+        flex-basis: 100%;
+        order: 3;
+        justify-content: center;
+        padding-top: 4px;
+        padding-bottom: 2px;
+        border-top: 1px solid #f1f5f9;
+        margin-top: 2px;
+      }
+    }
+    @media (max-width: 1060px) {
+      .options-bar {
+        flex-basis: 100%;
+        order: 3;
+        border-left: none;
+        border-top: 1px solid #f1f5f9;
+        padding-left: 0;
+        padding-top: 4px;
+        justify-content: center;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .speed-label {
+        display: none;
+      }
+      .preset-label {
+        display: none;
+      }
+    }
+    @media (max-width: 680px) {
+      .playback-bar {
+        padding: 4px 6px;
+        gap: 4px;
+      }
+      .scrubber-wrap {
+        flex-basis: 100%;
+        order: 2;
+        margin-top: 2px;
+      }
+      .playback-controls {
+        flex: 1;
+        justify-content: space-between;
+      }
+      .playback-controls button {
+        padding: 3px 6px;
+        font-size: 0.72rem;
+      }
+      .options-bar {
+        order: 3;
+        gap: 4px;
+        justify-content: space-between;
+      }
+      .options-bar label {
+        padding: 2px 4px;
+        font-size: 0.68rem;
+      }
+      .btn-text-full {
+        display: none;
+      }
+      .brand .badge {
+        display: none;
+      }
+      #presetSelect {
+        max-width: 110px;
+      }
+      .overlay-hints {
+        display: none;
+      }
+    }
+    @media (max-width: 480px) {
+      header {
+        padding: 3px 5px;
+        gap: 4px;
+      }
+      .header-right {
+        gap: 3px;
+      }
+      .header-right button {
+        padding: 3px 5px;
+        font-size: 0.7rem;
+      }
+      #presetSelect {
+        max-width: 90px;
+        font-size: 0.7rem;
+      }
+      #fpsMeter {
+        display: none;
+      }
+      .mode-btn {
+        padding: 2px 5px;
+        font-size: 0.7rem;
+      }
+      .toolbar button {
+        padding: 2px 4px;
+        font-size: 0.68rem;
+      }
+      .playback-controls button {
+        padding: 2px 4px;
+        font-size: 0.68rem;
+      }
+      #loopBadge {
+        display: none !important;
+      }
+      .frame-info {
+        font-size: 0.68rem;
+        min-width: 60px;
+      }
+    }
+
     /* Radial Context Menu */
     #radialMenu {
       display: none;
@@ -405,14 +579,16 @@
 <body>
 
 <header>
-  <div class="brand">
-    <h1>Linksim</h1>
-    <span class="badge">XPBD 2.0</span>
-  </div>
+  <div class="header-left">
+    <div class="brand">
+      <h1>Linksim</h1>
+      <span class="badge">XPBD 2.0</span>
+    </div>
 
-  <div class="mode-toggle">
-    <button id="btnModeSim" class="mode-btn active" title="Run physics simulation">Simulate</button>
-    <button id="btnModeEdit" class="mode-btn" title="Edit blueprint and linkages">Edit</button>
+    <div class="mode-toggle">
+      <button id="btnModeSim" class="mode-btn active" title="Run physics simulation">Simulate</button>
+      <button id="btnModeEdit" class="mode-btn" title="Edit blueprint and linkages">Edit</button>
+    </div>
   </div>
 
   <div id="editTools" class="toolbar" style="display:none;">
@@ -436,7 +612,7 @@
     <button id="btnUndo" title="Undo change (Ctrl+Z)">Undo</button>
     <button id="btnClear" class="btn-danger" title="Clear all">Clear</button>
 
-    <label for="presetSelect" style="font-size:0.75rem; font-weight:500;">Preset:</label>
+    <label for="presetSelect" class="preset-label" style="font-size:0.75rem; font-weight:500;">Preset:</label>
     <select id="presetSelect">
       <option value="fourbar">Four-Bar Linkage</option>
       <option value="sliderCrank">Slider-Crank Engine</option>
@@ -467,11 +643,11 @@
 <div class="playback-bar">
   <div class="playback-controls">
     <button id="btnPlay" style="min-width:60px; font-weight:600;">Pause</button>
-    <button id="btnStepBack" title="Step backward ([)">Step Back</button>
-    <button id="btnStepForward" title="Step forward (])">Step Forward</button>
+    <button id="btnStepBack" title="Step backward ([)"><span class="btn-text-full">Step </span>Back</button>
+    <button id="btnStepForward" title="Step forward (])"><span class="btn-text-full">Step </span>Fwd</button>
     <button id="btnReset" title="Reset to initial frame">Reset</button>
 
-    <label style="margin-left:6px; font-size:0.75rem; color:#475569;" for="speedSelect">Speed:</label>
+    <label id="speedLabel" class="speed-label" style="margin-left:6px; font-size:0.75rem; color:#475569;" for="speedSelect">Speed:</label>
     <select id="speedSelect">
       <option value="0.25">0.25x</option>
       <option value="0.5">0.5x</option>

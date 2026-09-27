@@ -84,6 +84,17 @@
     window.addEventListener('resize', handleResize);
     handleResize();
 
+    // Automatic reactive observation for header and playback-bar height changes
+    if (typeof ResizeObserver !== 'undefined') {
+      var ro = new ResizeObserver(function() {
+        handleResize();
+      });
+      var headerEl = document.querySelector('header');
+      var barEl = document.querySelector('.playback-bar');
+      if (headerEl) ro.observe(headerEl);
+      if (barEl) ro.observe(barEl);
+    }
+
     // Bind UI & Playback Controls
     bindHeaderControls();
     bindPlaybackControls();
@@ -118,12 +129,21 @@
     var availW = window.innerWidth;
     var availH = Math.max(200, window.innerHeight - headerH - barH);
 
+    var prevW = canvas.width || availW;
+    var prevH = canvas.height || availH;
+
     canvas.width = availW;
     canvas.height = availH;
 
     if (editor) {
-      editor.panX = availW / 2;
-      editor.panY = availH / 2;
+      if (!editor.hasInitialPan) {
+        editor.panX = availW / 2;
+        editor.panY = availH / 2;
+        editor.hasInitialPan = true;
+      } else {
+        editor.panX += (availW - prevW) / 2;
+        editor.panY += (availH - prevH) / 2;
+      }
       editor.render(physics);
     }
   }
