@@ -162,6 +162,20 @@
         if (!motorMatch) continue;
       }
 
+      // 4. Geneva wheel angles (if any) must be in phase modulo 2*PI
+      if (sk.genevaAngles && sj.genevaAngles) {
+        var genevaMatch = true;
+        for (var gi = 0; gi < sk.genevaAngles.length; gi++) {
+          var dGAngle = Math.abs(sk.genevaAngles[gi].angle - sj.genevaAngles[gi].angle);
+          var pGAngle = Math.min(dGAngle % (2 * Math.PI), (2 * Math.PI) - (dGAngle % (2 * Math.PI)));
+          if (pGAngle > 0.08) {
+            genevaMatch = false;
+            break;
+          }
+        }
+        if (!genevaMatch) continue;
+      }
+
       // Loop verified!
       this.loopDetected = true;
       this.loopStart = j;

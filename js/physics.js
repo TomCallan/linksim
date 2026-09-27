@@ -47,6 +47,8 @@
     this.motors = [];        // { centerNode, crankNode, speed, radius, angle, active }
     this.brackets = [];      // { a, b, c, width, color }
     this.attachedNodes = []; // { nodeId, gearIdx, radius, angleOffset }
+    this.genevas = [];       // { driverCenterNode, driverPinNode, genevaCenterNode, slots, radius, pinRadius, lockRadius, angle, dwellAngle, isEngaged, slotWidth }
+    this.attachedGenevaNodes = []; // { nodeId, genevaIdx, radius, angleOffset }
 
     // Direct user interaction
     this.mouseDragNode = -1;
@@ -86,6 +88,8 @@
     this.motors = [];
     this.brackets = [];
     this.attachedNodes = [];
+    this.genevas = [];
+    this.attachedGenevaNodes = [];
     this.mouseDragNode = -1;
     this.time = 0;
   };
@@ -165,6 +169,57 @@
       angleOffset: angleOffset
     });
     // Constrain attached node kinematically
+    this.invMass[nodeId] = 0.0;
+  };
+
+  PhysicsSystem.prototype.addGeneva = function(driverCenterNode, driverPinNode, genevaCenterNode, slots, options) {
+    options = options || {};
+    var numSlots = slots || 4;
+    var c1x = this.x[driverCenterNode], c1y = this.y[driverCenterNode];
+    var c2x = this.x[genevaCenterNode], c2y = this.y[genevaCenterNode];
+    var D = Math2D.dist(c1x, c1y, c2x, c2y);
+    if (D < 1e-4) D = 100;
+
+    var beta = Math.PI / numSlots;
+    var pinRadius = D * Math.sin(beta);
+    var wheelRadius = D * Math.cos(beta);
+    var lockRadius = Math.max(10, D - pinRadius);
+
+    var geneva = {
+      driverCenterNode: driverCenterNode,
+      driverPinNode: driverPinNode,
+      genevaCenterNode: genevaCenterNode,
+      slots: numSlots,
+      centerDist: D,
+      pinRadius: pinRadius,
+      radius: wheelRadius,
+      lockRadius: lockRadius,
+      angle: options.initialAngle || 0,
+      dwellAngle: options.initialAngle || 0,
+      isEngaged: false,
+      slotWidth: options.slotWidth || 10
+    };
+    this.genevas.push(geneva);
+    return geneva;
+  };
+
+  PhysicsSystem.prototype.attachNodeToGeneva = function(nodeId, genevaIdx, radius, angleOffset) {
+    var g = this.genevas[genevaIdx];
+    if (!g) return;
+    var cx = this.x[g.genevaCenterNode];
+    var cy = this.y[g.genevaCenterNode];
+    if (radius === undefined) {
+      radius = Math2D.dist(cx, cy, this.x[nodeId], this.y[nodeId]);
+    }
+    if (angleOffset === undefined) {
+      angleOffset = Math.atan2(this.y[nodeId] - cy, this.x[nodeId] - cx) - g.angle;
+    }
+    this.attachedGenevaNodes.push({
+      nodeId: nodeId,
+      genevaIdx: genevaIdx,
+      radius: radius,
+      angleOffset: angleOffset
+    });
     this.invMass[nodeId] = 0.0;
   };
 
@@ -320,6 +375,55 @@
         }
       }
 
+      // Advance Geneva mechanism indexing
+      for (var gi = 0; gi < this.genevas.length; gi++) {
+        var g = this.genevas[gi];
+        var c1x = this.x[g.driverCenterNode], c1y = this.y[g.driverCenterNode];
+        var c2x = this.x[g.genevaCenterNode], c2y = this.y[g.genevaCenterNode];
+        var px = this.x[g.driverPinNode], py = this.y[g.driverPinNode];
+
+        var centerAngle = Math.atan2(c1y - c2y, c1x - c2x);
+        var beta = Math.PI / g.slots;
+        var dirC1toC2 = centerAngle + Math.PI;
+
+        var crankAngle = Math.atan2(py - c1y, px - c1x);
+        var phiRel = Math2D.normalizeAngle(crankAngle - dirC1toC2);
+
+        var rx = px - c2x;
+        var ry = py - c2y;
+        var rDist = Math.hypot(rx, ry);
+
+        var inSlot = (Math.abs(phiRel) <= beta + 0.03) && (rDist <= g.radius + 3);
+
+        if (inSlot) {
+          var thetaPin = Math.atan2(ry, rx);
+          var psiRel = Math2D.normalizeAngle(thetaPin - centerAngle);
+          var rotDelta = -(psiRel - beta);
+          g.angle = g.dwellAngle + rotDelta;
+          g.isEngaged = true;
+        } else {
+          if (g.isEngaged) {
+            var step = (2 * Math.PI) / g.slots;
+            g.dwellAngle = Math.round(g.angle / step) * step;
+            g.isEngaged = false;
+          }
+          g.angle = g.dwellAngle;
+        }
+      }
+
+      // Update attached nodes on Geneva wheels before integration
+      for (var agi = 0; agi < this.attachedGenevaNodes.length; agi++) {
+        var attG = this.attachedGenevaNodes[agi];
+        var gObj = this.genevas[attG.genevaIdx];
+        if (gObj) {
+          var c2x = this.x[gObj.genevaCenterNode];
+          var c2y = this.y[gObj.genevaCenterNode];
+          var totAG = gObj.angle + attG.angleOffset;
+          this.x[attG.nodeId] = c2x + attG.radius * Math.cos(totAG);
+          this.y[attG.nodeId] = c2y + attG.radius * Math.sin(totAG);
+        }
+      }
+
       // 3. Symplectic Euler integration
       for (var i = 0; i < this.numNodes; i++) {
         if (this.isFixed[i]) {
@@ -446,6 +550,17 @@
           this.y[att.nodeId] = acy + att.radius * Math.sin(totA);
         }
       }
+      for (var agi = 0; agi < this.attachedGenevaNodes.length; agi++) {
+        var attG = this.attachedGenevaNodes[agi];
+        var gObj = this.genevas[attG.genevaIdx];
+        if (gObj) {
+          var c2x = this.x[gObj.genevaCenterNode];
+          var c2y = this.y[gObj.genevaCenterNode];
+          var totAG = gObj.angle + attG.angleOffset;
+          this.x[attG.nodeId] = c2x + attG.radius * Math.cos(totAG);
+          this.y[attG.nodeId] = c2y + attG.radius * Math.sin(totAG);
+        }
+      }
       if (this.mouseDragNode !== -1 && !this.isFixed[this.mouseDragNode]) {
         this.x[this.mouseDragNode] = this.mouseDragX;
         this.y[this.mouseDragNode] = this.mouseDragY;
@@ -478,6 +593,7 @@
       vy: Array.from(this.vy.subarray(0, this.numNodes)),
       motorAngles: this.motors.map(function(m) { return m.angle; }),
       gearAngles: this.gears.map(function(g) { return g.angle; }),
+      genevaAngles: this.genevas.map(function(g) { return { angle: g.angle, dwellAngle: g.dwellAngle, isEngaged: g.isEngaged }; }),
       time: this.time
     };
     return snap;
@@ -505,6 +621,13 @@
     if (snap.gearAngles) {
       for (var g = 0; g < this.gears.length && g < snap.gearAngles.length; g++) {
         this.gears[g].angle = snap.gearAngles[g];
+      }
+    }
+    if (snap.genevaAngles) {
+      for (var gi = 0; gi < this.genevas.length && gi < snap.genevaAngles.length; gi++) {
+        this.genevas[gi].angle = snap.genevaAngles[gi].angle;
+        this.genevas[gi].dwellAngle = snap.genevaAngles[gi].dwellAngle;
+        this.genevas[gi].isEngaged = snap.genevaAngles[gi].isEngaged;
       }
     }
     this.time = snap.time;

@@ -153,4 +153,33 @@ console.log('Running Linksim Programmatic API & Materials Test Suite...');
   console.log('PASS: Loop detection & caching API controls');
 }
 
+// Test 7: Geneva Mechanism declarative building and telemetry via LinksimAPI
+{
+  const sim = new PhysicsSystem();
+  const tl = new Timeline(sim);
+  const api = LinksimAPI.init(null, sim, tl, null);
+
+  api.build({
+    nodes: [
+      { x: -60, y: 0, fixed: true },
+      { x: 60, y: 0, fixed: true },
+      { x: 0, y: -60, fixed: false }
+    ],
+    genevas: [
+      { driverCenterNode: 0, driverPinNode: 2, genevaCenterNode: 1, slots: 4, angle: 0 }
+    ],
+    motors: [
+      { centerNode: 0, crankNode: 2, speed: 4.0 }
+    ]
+  });
+
+  const state = api.getState();
+  assert.strictEqual(state.genevas.length, 1);
+  assert.strictEqual(state.genevas[0].slots, 4);
+  assert.strictEqual(state.genevas[0].driverCenterNode, 0);
+  assert.strictEqual(state.genevas[0].genevaCenterNode, 1);
+
+  console.log('PASS: Geneva mechanism declarative API building and telemetry');
+}
+
 console.log('All API & Material tests passed successfully!');

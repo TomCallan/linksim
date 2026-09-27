@@ -28,6 +28,7 @@
     this.gears = [];          // [{ centerNode, radius, teeth, meshWith: [] }]
     this.motors = [];         // [{ centerNode, crankNode, speed }]
     this.brackets = [];       // [{ a, b, c, width, color }]
+    this.genevas = [];        // [{ driverCenterNode, driverPinNode, genevaCenterNode, slots, radius, pinRadius, lockRadius, slotWidth, angle }]
     this.trackedNodes = new Set(); // Node IDs being tracked for motion paths
 
     // Viewport pan/zoom
@@ -369,6 +370,7 @@
     this.gears = [];
     this.motors = [];
     this.brackets = [];
+    this.genevas = [];
     this.trackedNodes.clear();
     if (this.renderer) {
       this.renderer.clearTraces();
@@ -393,7 +395,8 @@
       sliders: JSON.parse(JSON.stringify(this.sliders)),
       gears: JSON.parse(JSON.stringify(this.gears)),
       motors: JSON.parse(JSON.stringify(this.motors)),
-      brackets: JSON.parse(JSON.stringify(this.brackets))
+      brackets: JSON.parse(JSON.stringify(this.brackets)),
+      genevas: JSON.parse(JSON.stringify(this.genevas))
     };
   };
 
@@ -405,9 +408,40 @@
     this.gears = data.gears || [];
     this.motors = data.motors || [];
     this.brackets = data.brackets || [];
+    this.genevas = data.genevas || [];
     this.selectedNodeId = -1;
     this.isConnecting = false;
     this._notifyChange();
+  };
+
+  MechanismEditor.prototype.addGeneva = function(driverCenter, driverPin, genevaCenter, slots, options) {
+    this.saveState();
+    options = options || {};
+    var c1 = this.getNodeById(driverCenter);
+    var c2 = this.getNodeById(genevaCenter);
+    var D = Math2D.dist(c1.x, c1.y, c2.x, c2.y);
+    if (D < 1e-4) D = 100;
+    var numSlots = slots || 4;
+    var beta = Math.PI / numSlots;
+    var pinRadius = D * Math.sin(beta);
+    var wheelRadius = D * Math.cos(beta);
+    var lockRadius = Math.max(10, D - pinRadius);
+
+    var geneva = {
+      driverCenterNode: driverCenter,
+      driverPinNode: driverPin,
+      genevaCenterNode: genevaCenter,
+      slots: numSlots,
+      centerDist: D,
+      pinRadius: pinRadius,
+      radius: wheelRadius,
+      lockRadius: lockRadius,
+      slotWidth: options.slotWidth || 10,
+      angle: options.initialAngle || 0
+    };
+    this.genevas.push(geneva);
+    this._notifyChange();
+    return geneva;
   };
 
   MechanismEditor.prototype._bindEvents = function() {
@@ -816,6 +850,22 @@
       }
     }
 
+    // 3.5 Draw Geneva Mechanisms & Cams
+    var genevas = (simPhysics && this.mode === 'simulate') ? simPhysics.genevas : this.genevas;
+    for (var gi = 0; gi < genevas.length; gi++) {
+      var gen = genevas[gi];
+      var c1 = nodePositions[gen.driverCenterNode];
+      var c2 = nodePositions[gen.genevaCenterNode];
+      var p = nodePositions[gen.driverPinNode];
+      if (c1 && c2 && p) {
+        var crankA = Math.atan2(p.y - c1.y, p.x - c1.x);
+        var genAngle = (simPhysics && this.mode === 'simulate') ? gen.angle : (gen.angle || 0);
+        var isEng = (simPhysics && this.mode === 'simulate') ? gen.isEngaged : false;
+        this.renderer.drawCamDriver(ctx, c1.x, c1.y, gen.pinRadius, gen.lockRadius, crankA, isEng);
+        this.renderer.drawGenevaWheel(ctx, c2.x, c2.y, gen.radius, gen.slots, genAngle, gen.lockRadius, gen.slotWidth);
+      }
+    }
+
     // 4. Draw Rods
     var rods = (simPhysics && this.mode === 'simulate') ? simPhysics.rods : this.rods;
     for (var r = 0; r < rods.length; r++) {
@@ -1099,6 +1149,33 @@
       ],
       motors: [
         { centerNode: 0, crankNode: 0, speed: 2.0 }
+      ],
+      brackets: []
+    },
+
+    // 6. Geneva Mechanism (Maltese Cross Intermittent Indexer & Output Rocker)
+    geneva: {
+      version: '2.0',
+      nodes: [
+        { id: 0, x: -60, y: 0, fixed: true, mass: 1 },    // Driver center C1
+        { id: 1, x: 60, y: 0, fixed: true, mass: 1 },     // Geneva wheel center C2
+        { id: 2, x: 0, y: -60, fixed: false, mass: 1 },   // Drive crank pin P
+        { id: 3, x: 60, y: 55, fixed: false, mass: 1, parentGeneva: { genevaIdx: 0, radius: 55, angleOffset: Math.PI / 2 } }, // Follower pin on Geneva
+        { id: 4, x: 180, y: 55, fixed: false, mass: 1 },  // Transmission rocker joint
+        { id: 5, x: 180, y: 135, fixed: true, mass: 1 }   // Rocker ground pivot
+      ],
+      rods: [
+        { a: 0, b: 2, length: 84.85, width: 8, color: '#f59e0b' },
+        { a: 3, b: 4, length: 120, width: 10, color: '#3b82f6' },
+        { a: 4, b: 5, length: 80, width: 12, color: '#10b981' }
+      ],
+      sliders: [],
+      gears: [],
+      genevas: [
+        { driverCenterNode: 0, driverPinNode: 2, genevaCenterNode: 1, slots: 4, radius: 84.85, pinRadius: 84.85, lockRadius: 35.15, slotWidth: 11, angle: 0 }
+      ],
+      motors: [
+        { centerNode: 0, crankNode: 2, speed: 3.0 }
       ],
       brackets: []
     }

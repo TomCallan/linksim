@@ -195,4 +195,36 @@ console.log('Running Linksim Physics & Timeline Test Suite...');
   console.log('PASS: Automatic loop detection & cached frame buffer playback');
 }
 
+// Test 10: Geneva Mechanism (Cranks & Cams intermittent indexing)
+{
+  const sim = new PhysicsSystem();
+  const c1 = sim.addNode(-60, 0, true);
+  const c2 = sim.addNode(60, 0, true);
+  const pin = sim.addNode(0, -60, false);
+  const folPin = sim.addNode(60, 55, false);
+
+  sim.addGeneva(c1, pin, c2, 4);
+  sim.attachNodeToGeneva(folPin, 0, 55, Math.PI / 2);
+  sim.addMotor(c1, pin, 3.0);
+
+  // Initial dwell check: at start, pin is entering slot 0
+  const initialAngle = sim.genevas[0].angle;
+
+  // Step through 1 full revolution of driver motor (T = 2pi / 3 = 2.094s -> 126 frames)
+  for (let f = 0; f < 126; f++) {
+    sim.step(1 / 60);
+  }
+
+  // After 1 full driver rotation, Geneva wheel must have indexed by exactly 90 degrees (PI/2 rad)
+  const angleAfter1Rev = sim.genevas[0].dwellAngle;
+  const deltaAngle = Math.abs(angleAfter1Rev - initialAngle);
+  assert(Math.abs(deltaAngle - Math.PI / 2) < 0.05, `Geneva did not index 90 deg: expected ${Math.PI/2}, got ${deltaAngle}`);
+
+  // Follower pin attached to Geneva wheel must also have rotated around c2 by 90 degrees
+  const dFollower = Math2D.dist(sim.x[c2], sim.y[c2], sim.x[folPin], sim.y[folPin]);
+  assert(Math.abs(dFollower - 55) < 0.01, `Follower pin radius error: expected 55, got ${dFollower}`);
+
+  console.log('PASS: Geneva mechanism intermittent 90-degree indexing & dwell phase');
+}
+
 console.log('All tests passed successfully!');

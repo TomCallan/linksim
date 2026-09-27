@@ -165,11 +165,25 @@
       }
     }
 
-    // 6. Connect parented nodes to gears
+    // 5.5 Add Geneva mechanisms
+    if (model.genevas) {
+      for (var gi = 0; gi < model.genevas.length; gi++) {
+        var gen = model.genevas[gi];
+        physics.addGeneva(gen.driverCenterNode, gen.driverPinNode, gen.genevaCenterNode, gen.slots, {
+          initialAngle: gen.angle || 0,
+          slotWidth: gen.slotWidth
+        });
+      }
+    }
+
+    // 6. Connect parented nodes to gears and Geneva wheels
     for (var i = 0; i < model.nodes.length; i++) {
       var n = model.nodes[i];
       if (n.parentGear) {
         physics.attachNodeToGear(n.id, n.parentGear.gearIdx, n.parentGear.radius, n.parentGear.angleOffset);
+      }
+      if (n.parentGeneva) {
+        physics.attachNodeToGeneva(n.id, n.parentGeneva.genevaIdx, n.parentGeneva.radius, n.parentGeneva.angleOffset);
       }
     }
 

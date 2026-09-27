@@ -57,6 +57,15 @@
               if (gear.meshWith) gObj.meshWith = gear.meshWith.slice();
             }
           }
+          if (spec.genevas) {
+            for (var gi = 0; gi < spec.genevas.length; gi++) {
+              var gen = spec.genevas[gi];
+              physics.addGeneva(gen.driverCenterNode, gen.driverPinNode, gen.genevaCenterNode, gen.slots, {
+                initialAngle: gen.angle || 0,
+                slotWidth: gen.slotWidth
+              });
+            }
+          }
           if (spec.motors) {
             for (var m = 0; m < spec.motors.length; m++) {
               var mot = spec.motors[m];
@@ -117,6 +126,23 @@
         return null;
       },
 
+      addGeneva: function(driverCenterNode, driverPinNode, genevaCenterNode, slots, options) {
+        if (editor) return editor.addGeneva(driverCenterNode, driverPinNode, genevaCenterNode, slots, options);
+        if (physics) return physics.addGeneva(driverCenterNode, driverPinNode, genevaCenterNode, slots, options);
+        return null;
+      },
+
+      attachNodeToGeneva: function(nodeId, genevaIdx, radius, angleOffset) {
+        if (physics) physics.attachNodeToGeneva(nodeId, genevaIdx, radius, angleOffset);
+        if (editor) {
+          var n = editor.getNodeById(nodeId);
+          if (n) {
+            n.parentGeneva = { genevaIdx: genevaIdx, radius: radius, angleOffset: angleOffset };
+            editor._notifyChange();
+          }
+        }
+      },
+
       setGravity: function(gx, gy) {
         if (physics) {
           physics.gravityX = gx;
@@ -173,12 +199,25 @@
         var motors = physics.motors.map(function(m) {
           return { centerNode: m.centerNode, crankNode: m.crankNode, speed: m.speed, angle: m.angle, active: m.active };
         });
+        var genevas = physics.genevas.map(function(gen) {
+          return {
+            driverCenterNode: gen.driverCenterNode,
+            driverPinNode: gen.driverPinNode,
+            genevaCenterNode: gen.genevaCenterNode,
+            slots: gen.slots,
+            radius: gen.radius,
+            angle: gen.angle,
+            dwellAngle: gen.dwellAngle,
+            isEngaged: gen.isEngaged
+          };
+        });
         return {
           time: physics.time,
           nodes: nodes,
           rods: rods,
           gears: gears,
-          motors: motors
+          motors: motors,
+          genevas: genevas
         };
       },
 
