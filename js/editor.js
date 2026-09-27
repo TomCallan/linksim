@@ -473,72 +473,54 @@
         return;
       }
 
-      // In Edit Mode
-      switch (self.activeTool) {
-        case 'select':
-          if (nearNode !== -1) {
-            self.selectedNodeId = nearNode;
-            self.isDragging = true;
-          } else {
-            self.isPanning = true;
-            self.panStartX = e.clientX - self.panX;
-            self.panStartY = e.clientY - self.panY;
+      // In Edit Mode:
+      // If clicking directly on an element
+      if (nearNode !== -1) {
+        if (self.activeTool === 'select') {
+          self.selectedNodeId = nearNode;
+          self.isDragging = true;
+        } else if (self.activeTool === 'add_rod') {
+          self.connectStartNode = nearNode;
+          self.isConnecting = true;
+        } else if (self.activeTool === 'add_gear') {
+          self.addGear(nearNode, 45, 15);
+        } else if (self.activeTool === 'add_motor') {
+          if (!self._motorCenter) {
+            self._motorCenter = nearNode;
+          } else if (self._motorCenter !== nearNode) {
+            self.addMotor(self._motorCenter, nearNode);
+            self._motorCenter = null;
           }
-          break;
-
-        case 'add_pin':
-          self.addNode(w.x, w.y, true);
-          break;
-
-        case 'add_node':
-          self.addNode(w.x, w.y, false);
-          break;
-
-        case 'add_rod':
-          // Fluid Drag-to-Connect: Start dragging from node, or create node if clicking empty space
-          if (nearNode !== -1) {
-            self.connectStartNode = nearNode;
-            self.isConnecting = true;
-          } else {
-            var newId = self.addNode(w.x, w.y, false);
-            self.connectStartNode = newId;
-            self.isConnecting = true;
+        } else if (self.activeTool === 'add_slider') {
+          if (!self._sliderRailStart) {
+            self._sliderRailStart = nearNode;
+          } else if (self._sliderRailStart !== nearNode) {
+            var sNode = self.addNode((self.getNodeById(self._sliderRailStart).x + self.getNodeById(nearNode).x) / 2,
+                                     (self.getNodeById(self._sliderRailStart).y + self.getNodeById(nearNode).y) / 2, false);
+            self.addSlider(sNode, self._sliderRailStart, nearNode);
+            self._sliderRailStart = null;
           }
-          break;
-
-        case 'add_slider':
-          if (nearNode !== -1) {
-            if (!self._sliderRailStart) {
-              self._sliderRailStart = nearNode;
-            } else if (self._sliderRailStart !== nearNode) {
-              var sNode = self.addNode((self.getNodeById(self._sliderRailStart).x + self.getNodeById(nearNode).x) / 2,
-                                       (self.getNodeById(self._sliderRailStart).y + self.getNodeById(nearNode).y) / 2, false);
-              self.addSlider(sNode, self._sliderRailStart, nearNode);
-              self._sliderRailStart = null;
-            }
-          }
-          break;
-
-        case 'add_gear':
-          var gCenter = nearNode !== -1 ? nearNode : self.addNode(w.x, w.y, true);
-          self.addGear(gCenter, 45, 15);
-          break;
-
-        case 'add_motor':
-          if (nearNode !== -1) {
-            if (!self._motorCenter) {
-              self._motorCenter = nearNode;
-            } else if (self._motorCenter !== nearNode) {
-              self.addMotor(self._motorCenter, nearNode);
-              self._motorCenter = null;
-            }
-          }
-          break;
-
-        case 'delete':
-          self.deleteElementAt(w.x, w.y);
-          break;
+        } else if (self.activeTool === 'delete') {
+          self.deleteNode(nearNode);
+        }
+        self.render();
+        return;
       }
+
+      if (nearGear !== -1 && self.activeTool === 'delete') {
+        self.deleteGear(nearGear);
+        self.render();
+        return;
+      }
+
+      // If clicking in EMPTY space:
+      // Enable Universal Drag-to-Pan: if mouse moves, it pans; if stationary click, it performs the tool!
+      self.isPotentialPan = true;
+      self.panMouseDownX = e.clientX;
+      self.panMouseDownY = e.clientY;
+      self.panStartX = e.clientX - self.panX;
+      self.panStartY = e.clientY - self.panY;
+      self._pendingEmptyClick = { tool: self.activeTool, wx: w.x, wy: w.y };
       self.render();
     });
 
@@ -546,6 +528,14 @@
       var w = self.screenToWorld(e.clientX, e.clientY);
       self.mouseWorldX = w.x;
       self.mouseWorldY = w.y;
+
+      if (self.isPotentialPan) {
+        var pdistX = e.clientX - self.panMouseDownX;
+        var pdistY = e.clientY - self.panMouseDownY;
+        if (pdistX * pdistX + pdistY * pdistY > 25) {
+          self.isPanning = true;
+        }
+      }
 
       if (self.isPanning) {
         self.panX = e.clientX - self.panStartX;
@@ -608,6 +598,21 @@
     });
 
     window.addEventListener('mouseup', function(e) {
+      if (self.isPotentialPan && !self.isPanning && self._pendingEmptyClick) {
+        var tool = self._pendingEmptyClick.tool;
+        var ex = self._pendingEmptyClick.wx;
+        var ey = self._pendingEmptyClick.wy;
+        if (tool === 'add_node') {
+          self.addNode(ex, ey, false);
+        } else if (tool === 'add_pin') {
+          self.addNode(ex, ey, true);
+        } else if (tool === 'add_gear') {
+          var cId = self.addNode(ex, ey, true);
+          self.addGear(cId, 45, 15);
+        }
+      }
+      self.isPotentialPan = false;
+
       if (self.isConnecting && self.connectStartNode !== -1) {
         var w = self.screenToWorld(e.clientX, e.clientY);
         var nearNode = self.findNodeNear(w.x, w.y);
@@ -628,12 +633,88 @@
       self.isPanning = false;
       self.isTurningGear = false;
       self.turningGearIdx = -1;
+      self._pendingEmptyClick = null;
 
       if (self.onDirectDragRelease) {
         self.onDirectDragRelease();
       }
 
       self.render();
+    });
+
+    // Touch Event Handling (Universal Pinch-to-Zoom, Two-Finger Pan, and Touch Long-Press)
+    var touchStartDist = 0;
+    var touchStartPanX = 0;
+    var touchStartPanY = 0;
+    var longPressTimer = null;
+
+    canvas.addEventListener('touchstart', function(e) {
+      if (e.touches.length === 1) {
+        var t = e.touches[0];
+        longPressTimer = setTimeout(function() {
+          var w = self.screenToWorld(t.clientX, t.clientY);
+          var nearNode = self.findNodeNear(w.x, w.y);
+          var nearGear = self.findGearNear(w.x, w.y);
+          var nearRod = self.findRodNear(w.x, w.y);
+          var type = 'empty', data = { x: w.x, y: w.y };
+          if (nearNode !== -1) { type = 'node'; data = self.getNodeById(nearNode); }
+          else if (nearGear !== -1) { type = 'gear'; data = { index: nearGear, gear: self.gears[nearGear] }; }
+          else if (nearRod !== -1) { type = 'rod'; data = { index: nearRod, rod: self.rods[nearRod] }; }
+          if (self.onShowContextMenu) self.onShowContextMenu(t.clientX, t.clientY, type, data);
+        }, 500);
+
+        var me = new MouseEvent('mousedown', { clientX: t.clientX, clientY: t.clientY, button: 0 });
+        canvas.dispatchEvent(me);
+      } else if (e.touches.length === 2) {
+        if (longPressTimer) clearTimeout(longPressTimer);
+        touchStartDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+        touchStartPanX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - self.panX;
+        touchStartPanY = (e.touches[0].clientY + e.touches[1].clientY) / 2 - self.panY;
+      }
+    }, { passive: false });
+
+    canvas.addEventListener('touchmove', function(e) {
+      if (longPressTimer) clearTimeout(longPressTimer);
+      if (e.touches.length === 1) {
+        var t = e.touches[0];
+        var me = new MouseEvent('mousemove', { clientX: t.clientX, clientY: t.clientY, button: 0 });
+        canvas.dispatchEvent(me);
+      } else if (e.touches.length === 2) {
+        e.preventDefault();
+        var dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+        if (touchStartDist > 0) {
+          var factor = dist / touchStartDist;
+          self.zoom = Math.max(0.2, Math.min(5.0, self.zoom * factor));
+          touchStartDist = dist;
+        }
+        var midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        var midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        self.panX = midX - touchStartPanX;
+        self.panY = midY - touchStartPanY;
+        self.render();
+      }
+    }, { passive: false });
+
+    canvas.addEventListener('touchend', function(e) {
+      if (longPressTimer) clearTimeout(longPressTimer);
+      var me = new MouseEvent('mouseup', { clientX: 0, clientY: 0, button: 0 });
+      window.dispatchEvent(me);
+    });
+
+    // Double-Click Element to Open Inspector
+    canvas.addEventListener('dblclick', function(e) {
+      var w = self.screenToWorld(e.clientX, e.clientY);
+      var nearNode = self.findNodeNear(w.x, w.y);
+      var nearGear = self.findGearNear(w.x, w.y);
+      var nearRod = self.findRodNear(w.x, w.y);
+
+      if (nearNode !== -1 && self.onConfigureElement) {
+        self.onConfigureElement('node', self.getNodeById(nearNode));
+      } else if (nearGear !== -1 && self.onConfigureElement) {
+        self.onConfigureElement('gear', { index: nearGear, gear: self.gears[nearGear] });
+      } else if (nearRod !== -1 && self.onConfigureElement) {
+        self.onConfigureElement('rod', { index: nearRod, rod: self.rods[nearRod] });
+      }
     });
 
     canvas.addEventListener('wheel', function(e) {

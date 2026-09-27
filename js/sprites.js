@@ -17,6 +17,7 @@
     this.showTraces = true;
     this.maxTracePoints = 120;
     this.traces = {}; // nodeId -> [{x, y}]
+    this.gearPathCache = {}; // key -> Path2D
   }
 
   SpriteRenderer.prototype.clearTraces = function() {
@@ -272,50 +273,70 @@
     var rootR = Math.max(pitchR * 0.5, pitchR - dedendum);
     var toothAngle = (Math.PI * 2) / numTeeth;
 
-    // Draw authentic gear tooth profile
-    ctx.beginPath();
-    for (var i = 0; i < numTeeth; i++) {
-      var baseA = i * toothAngle;
+    var key = Math.round(radius * 10) / 10 + '_' + numTeeth;
+    var cachedPath = this.gearPathCache[key];
 
-      // Involute-approximated points:
-      // a0: root start
-      // a1: pitch flank start
-      // a2: tip corner 1
-      // a3: tip corner 2
-      // a4: pitch flank end
-      // a5: root end
-      var a0 = baseA - toothAngle * 0.32;
-      var a1 = baseA - toothAngle * 0.24;
-      var a2 = baseA - toothAngle * 0.12;
-      var a3 = baseA + toothAngle * 0.12;
-      var a4 = baseA + toothAngle * 0.24;
-      var a5 = baseA + toothAngle * 0.32;
+    if (typeof Path2D !== 'undefined') {
+      if (!cachedPath) {
+        cachedPath = new Path2D();
+        for (var i = 0; i < numTeeth; i++) {
+          var baseA = i * toothAngle;
+          var a0 = baseA - toothAngle * 0.32;
+          var a1 = baseA - toothAngle * 0.24;
+          var a2 = baseA - toothAngle * 0.12;
+          var a3 = baseA + toothAngle * 0.12;
+          var a4 = baseA + toothAngle * 0.24;
+          var a5 = baseA + toothAngle * 0.32;
 
-      var x0 = rootR  * Math.cos(a0), y0 = rootR  * Math.sin(a0);
-      var x1 = pitchR * Math.cos(a1), y1 = pitchR * Math.sin(a1);
-      var x2 = tipR   * Math.cos(a2), y2 = tipR   * Math.sin(a2);
-      var x3 = tipR   * Math.cos(a3), y3 = tipR   * Math.sin(a3);
-      var x4 = pitchR * Math.cos(a4), y4 = pitchR * Math.sin(a4);
-      var x5 = rootR  * Math.cos(a5), y5 = rootR  * Math.sin(a5);
+          var x0 = rootR  * Math.cos(a0), y0 = rootR  * Math.sin(a0);
+          var x1 = pitchR * Math.cos(a1), y1 = pitchR * Math.sin(a1);
+          var x2 = tipR   * Math.cos(a2), y2 = tipR   * Math.sin(a2);
+          var x3 = tipR   * Math.cos(a3), y3 = tipR   * Math.sin(a3);
+          var x4 = pitchR * Math.cos(a4), y4 = pitchR * Math.sin(a4);
+          var x5 = rootR  * Math.cos(a5), y5 = rootR  * Math.sin(a5);
 
-      if (i === 0) {
-        ctx.moveTo(x0, y0);
-      } else {
-        ctx.lineTo(x0, y0);
+          if (i === 0) cachedPath.moveTo(x0, y0);
+          else cachedPath.lineTo(x0, y0);
+          cachedPath.lineTo(x1, y1);
+          cachedPath.lineTo(x2, y2);
+          cachedPath.lineTo(x3, y3);
+          cachedPath.lineTo(x4, y4);
+          cachedPath.lineTo(x5, y5);
+        }
+        cachedPath.closePath();
+        this.gearPathCache[key] = cachedPath;
       }
-      ctx.lineTo(x1, y1);
-      ctx.lineTo(x2, y2);
-      ctx.lineTo(x3, y3);
-      ctx.lineTo(x4, y4);
-      ctx.lineTo(x5, y5);
+      ctx.fillStyle = '#cbd5e1';
+      ctx.fill(cachedPath);
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#334155';
+      ctx.stroke(cachedPath);
+    } else {
+      // Fallback if Path2D is undefined
+      ctx.beginPath();
+      for (var i = 0; i < numTeeth; i++) {
+        var baseA = i * toothAngle;
+        var a0 = baseA - toothAngle * 0.32, a1 = baseA - toothAngle * 0.24;
+        var a2 = baseA - toothAngle * 0.12, a3 = baseA + toothAngle * 0.12;
+        var a4 = baseA + toothAngle * 0.24, a5 = baseA + toothAngle * 0.32;
+        var x0 = rootR * Math.cos(a0), y0 = rootR * Math.sin(a0);
+        var x1 = pitchR * Math.cos(a1), y1 = pitchR * Math.sin(a1);
+        var x2 = tipR * Math.cos(a2), y2 = tipR * Math.sin(a2);
+        var x3 = tipR * Math.cos(a3), y3 = tipR * Math.sin(a3);
+        var x4 = pitchR * Math.cos(a4), y4 = pitchR * Math.sin(a4);
+        var x5 = rootR * Math.cos(a5), y5 = rootR * Math.sin(a5);
+        if (i === 0) ctx.moveTo(x0, y0);
+        else ctx.lineTo(x0, y0);
+        ctx.lineTo(x1, y1); ctx.lineTo(x2, y2); ctx.lineTo(x3, y3);
+        ctx.lineTo(x4, y4); ctx.lineTo(x5, y5);
+      }
+      ctx.closePath();
+      ctx.fillStyle = '#cbd5e1';
+      ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#334155';
+      ctx.stroke();
     }
-    ctx.closePath();
-
-    ctx.fillStyle = '#cbd5e1';
-    ctx.fill();
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = '#334155';
-    ctx.stroke();
 
     // Pitch circle guideline (dashed subtle)
     ctx.beginPath();

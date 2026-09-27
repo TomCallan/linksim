@@ -16,6 +16,15 @@
 
   var MAX_NODES = 256;
 
+  var Materials = {
+    steel: { key: 'steel', name: 'Rigid Steel', compliance: 0.0, density: 7.8, color: '#3b82f6', width: 12 },
+    aluminum: { key: 'aluminum', name: 'Aluminum', compliance: 0.0, density: 2.7, color: '#60a5fa', width: 10 },
+    carbon: { key: 'carbon', name: 'Carbon Fiber', compliance: 0.0, density: 1.6, color: '#334155', width: 10 },
+    wood: { key: 'wood', name: 'Composite Wood', compliance: 0.0001, density: 0.7, color: '#d97706', width: 14 },
+    rubber: { key: 'rubber', name: 'Rubber / Elastic', compliance: 0.008, density: 1.1, color: '#ec4899', width: 8 },
+    spring: { key: 'spring', name: 'Coil Spring', compliance: 0.02, density: 1.0, color: '#10b981', width: 8 }
+  };
+
   function PhysicsSystem() {
     this.numNodes = 0;
 
@@ -32,8 +41,8 @@
     this.fixedY = new Float64Array(MAX_NODES);
 
     // Constraints collections
-    this.rods = [];          // { a, b, length, width, color, stress }
-    this.sliders = [];       // { node, aNode, bNode, minT, maxT, railLength }
+    this.rods = [];          // { a, b, length, width, color, stress, compliance, material }
+    this.sliders = [];       // { node, aNode, bNode, minT, maxT, railLength, friction }
     this.gears = [];         // { centerNode, radius, teeth, angle, meshWith: [...] }
     this.motors = [];        // { centerNode, crankNode, speed, radius, angle, active }
     this.brackets = [];      // { a, b, c, width, color }
@@ -46,14 +55,17 @@
 
     // Simulation settings
     this.gravityX = 0;
-    this.gravityY = 0; // Linkages typically operate in horizontal plane by default
-    this.substeps = 15;
+    this.gravityY = 0; // Linkages typically operate in horizontal plane by default (set to 980 for vertical)
+    this.substeps = 20;
+    this.solverIterations = 2;
     this.damping = 0.002;
     this.time = 0;
 
     // Reusable scratch variables to avoid GC allocations
     this._scratch = new Float64Array(8);
   }
+
+  PhysicsSystem.Materials = Materials;
 
   PhysicsSystem.prototype.clear = function() {
     this.numNodes = 0;
@@ -104,16 +116,19 @@
     this.fixedY[id] = this.y[id];
   };
 
-  PhysicsSystem.prototype.addRod = function(a, b, length, style) {
+  PhysicsSystem.prototype.addRod = function(a, b, length, style, materialKey) {
     if (length === undefined || length <= 0) {
       length = Math2D.dist(this.x[a], this.y[a], this.x[b], this.y[b]);
     }
+    var mat = Materials[materialKey] || Materials.steel;
     var rod = {
       a: a,
       b: b,
       length: length,
-      width: (style && style.width) || 8,
-      color: (style && style.color) || '#3b82f6',
+      width: (style && style.width) || mat.width || 10,
+      color: (style && style.color) || mat.color || '#3b82f6',
+      material: materialKey || 'steel',
+      compliance: (style && style.compliance !== undefined) ? style.compliance : mat.compliance,
       stress: 0
     };
     this.rods.push(rod);
@@ -328,69 +343,78 @@
         this.y[this.mouseDragNode] = this.mouseDragY;
       }
 
-      // 3. Project constraints
-      // Distance constraints (Rods)
-      for (var r = 0; r < this.rods.length; r++) {
-        var rod = this.rods[r];
-        var a = rod.a;
-        var b = rod.b;
-        var wA = this.invMass[a];
-        var wB = this.invMass[b];
-        var wSum = wA + wB;
-        if (wSum === 0) continue;
+      // 3. Project constraints (Multi-pass Gauss-Seidel XPBD)
+      for (var iter = 0; iter < this.solverIterations; iter++) {
+        // Distance constraints (Rods)
+        for (var r = 0; r < this.rods.length; r++) {
+          var rod = this.rods[r];
+          var a = rod.a;
+          var b = rod.b;
+          var wA = this.invMass[a];
+          var wB = this.invMass[b];
+          var wSum = wA + wB;
+          if (wSum === 0) continue;
 
-        var dx = this.x[b] - this.x[a];
-        var dy = this.y[b] - this.y[a];
-        var dist = Math.hypot(dx, dy);
-        if (dist === 0) continue;
+          var dx = this.x[b] - this.x[a];
+          var dy = this.y[b] - this.y[a];
+          var dist = Math.hypot(dx, dy);
+          if (dist === 0) continue;
 
-        var deltaC = dist - rod.length;
-        rod.stress = Math.abs(deltaC) / rod.length;
+          var deltaC = dist - rod.length;
+          rod.stress = Math.abs(deltaC) / rod.length;
 
-        var factor = deltaC / (dist * wSum);
-        var corrX = dx * factor;
-        var corrY = dy * factor;
+          var compliance = rod.compliance || 0.0;
+          var factor = deltaC / (dist * (wSum + compliance / hSq));
+          var corrX = dx * factor;
+          var corrY = dy * factor;
 
-        if (wA > 0) {
-          this.x[a] += wA * corrX;
-          this.y[a] += wA * corrY;
+          if (wA > 0) {
+            this.x[a] += wA * corrX;
+            this.y[a] += wA * corrY;
+          }
+          if (wB > 0) {
+            this.x[b] -= wB * corrX;
+            this.y[b] -= wB * corrY;
+          }
         }
-        if (wB > 0) {
-          this.x[b] -= wB * corrX;
-          this.y[b] -= wB * corrY;
+
+        // Prismatic / Slider constraints
+        for (var sl = 0; sl < this.sliders.length; sl++) {
+          var s = this.sliders[sl];
+          var sNode = s.node;
+          if (this.isFixed[sNode]) continue;
+
+          var aNode = s.aNode;
+          var bNode = s.bNode;
+          var ax = this.x[aNode], ay = this.y[aNode];
+          var bx = this.x[bNode], by = this.y[bNode];
+
+          var abx = bx - ax;
+          var aby = by - ay;
+          var lenSq = abx * abx + aby * aby;
+          if (lenSq < 1e-12) continue;
+          var len = Math.sqrt(lenSq);
+          var ux = abx / len;
+          var uy = aby / len;
+
+          // Project sNode onto line
+          var px = this.x[sNode] - ax;
+          var py = this.y[sNode] - ay;
+          var proj = px * ux + py * uy;
+
+          // Clamp to stroke limits if configured
+          if (s.minT !== undefined && proj < s.minT) proj = s.minT;
+          if (s.maxT !== undefined && proj > s.maxT) proj = s.maxT;
+
+          this.x[sNode] = ax + proj * ux;
+          this.y[sNode] = ay + proj * uy;
+
+          // Slider friction
+          if (s.friction && s.friction > 0) {
+            this.vx[sNode] *= Math.max(0, 1.0 - s.friction * h * 10);
+            this.vy[sNode] *= Math.max(0, 1.0 - s.friction * h * 10);
+          }
         }
-      }
-
-      // Prismatic / Slider constraints
-      for (var sl = 0; sl < this.sliders.length; sl++) {
-        var s = this.sliders[sl];
-        var sNode = s.node;
-        if (this.isFixed[sNode]) continue;
-
-        var aNode = s.aNode;
-        var bNode = s.bNode;
-        var ax = this.x[aNode], ay = this.y[aNode];
-        var bx = this.x[bNode], by = this.y[bNode];
-
-        var abx = bx - ax;
-        var aby = by - ay;
-        var lenSq = abx * abx + aby * aby;
-        if (lenSq < 1e-12) continue;
-        var len = Math.sqrt(lenSq);
-        var ux = abx / len;
-        var uy = aby / len;
-
-        // Project sNode onto line
-        var px = this.x[sNode] - ax;
-        var py = this.y[sNode] - ay;
-        var proj = px * ux + py * uy;
-
-        // Clamp to stroke limits if configured
-        if (s.minT !== undefined && proj < s.minT) proj = s.minT;
-        if (s.maxT !== undefined && proj > s.maxT) proj = s.maxT;
-
-        this.x[sNode] = ax + proj * ux;
-        this.y[sNode] = ay + proj * uy;
       }
 
       // Re-assert fixed pins, motor crank positions, and gear attached nodes

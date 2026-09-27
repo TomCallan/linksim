@@ -50,6 +50,16 @@
       showContextMenu(clientX, clientY, targetType, targetData);
     };
 
+    // Wire Element Inspector
+    editor.onConfigureElement = function(targetType, targetData) {
+      openInspector(targetType, targetData);
+    };
+
+    // Initialize Programmatic API on window for AI agents and scripts
+    if (typeof LinksimAPI !== 'undefined') {
+      window.LinksimAPI = LinksimAPI.init(editor, physics, timeline, renderer);
+    }
+
     // Hide context menu on click elsewhere
     window.addEventListener('click', function() {
       hideContextMenu();
@@ -252,6 +262,13 @@
     });
 
     // Checkboxes
+    var gravToggle = document.getElementById('toggleGravity');
+    if (gravToggle) {
+      gravToggle.addEventListener('change', function(e) {
+        physics.gravityY = e.target.checked ? 980 : 0;
+      });
+    }
+
     var stressToggle = document.getElementById('toggleStress');
     if (stressToggle) {
       stressToggle.addEventListener('change', function(e) {
@@ -347,6 +364,10 @@
     if (targetType === 'node') {
       var n = targetData;
       items.push({
+        label: 'Configure Node...',
+        action: function() { openInspector('node', n); }
+      });
+      items.push({
         label: n.fixed ? 'Free Joint (Unanchor)' : 'Anchor Ground Pin',
         action: function() { editor.toggleFixed(n.id); }
       });
@@ -374,6 +395,10 @@
     } else if (targetType === 'gear') {
       var gIdx = targetData.index;
       items.push({
+        label: 'Configure Gear...',
+        action: function() { openInspector('gear', targetData); }
+      });
+      items.push({
         label: 'Add Crankpin on Gear Edge',
         action: function() { editor.addCrankpinOnGear(gIdx); }
       });
@@ -391,6 +416,10 @@
       });
     } else if (targetType === 'rod') {
       var rIdx = targetData.index;
+      items.push({
+        label: 'Configure Material & Properties...',
+        action: function() { openInspector('rod', targetData); }
+      });
       items.push({
         label: 'Delete Rod',
         danger: true,
@@ -449,6 +478,89 @@
     if (contextMenuEl) {
       contextMenuEl.style.display = 'none';
     }
+  }
+
+  function openInspector(type, data) {
+    var modal = document.getElementById('inspectorModal');
+    var titleEl = document.getElementById('inspectorTitle');
+    var bodyEl = document.getElementById('inspectorBody');
+    var btnSave = document.getElementById('btnInspectorSave');
+    var btnCancel = document.getElementById('btnInspectorCancel');
+    var btnClose = document.getElementById('btnInspectorClose');
+    if (!modal) return;
+
+    bodyEl.innerHTML = '';
+    var saveHandler = null;
+
+    if (type === 'node') {
+      var n = data;
+      titleEl.textContent = 'Configure Node #' + n.id;
+      bodyEl.innerHTML = 
+        '<div class="form-group"><label><input type="checkbox" id="insFixed" ' + (n.fixed ? 'checked' : '') + '> Ground Pin (Fixed Anchor)</label></div>' +
+        '<div class="form-group"><label>Mass (kg)</label><input type="number" id="insMass" value="' + (n.mass || 1.0) + '" step="0.1" min="0.1"></div>';
+
+      saveHandler = function() {
+        editor.saveState();
+        n.fixed = document.getElementById('insFixed').checked;
+        n.mass = parseFloat(document.getElementById('insMass').value) || 1.0;
+        editor._notifyChange();
+      };
+    } else if (type === 'gear') {
+      var g = data.gear;
+      titleEl.textContent = 'Configure Gear';
+      bodyEl.innerHTML = 
+        '<div class="form-group"><label>Pitch Radius</label><input type="number" id="insRadius" value="' + g.radius + '" step="5" min="15"></div>' +
+        '<div class="form-group"><label>Tooth Count</label><input type="number" id="insTeeth" value="' + g.teeth + '" step="1" min="6"></div>';
+
+      saveHandler = function() {
+        editor.saveState();
+        g.radius = Math.max(15, parseFloat(document.getElementById('insRadius').value) || 45);
+        g.teeth = Math.max(6, parseInt(document.getElementById('insTeeth').value, 10) || 15);
+        editor._notifyChange();
+      };
+    } else if (type === 'rod') {
+      var r = data.rod;
+      titleEl.textContent = 'Configure Rod / Link';
+      bodyEl.innerHTML = 
+        '<div class="form-group"><label>Material Preset</label><select id="insMat">' +
+        '<option value="steel"' + (r.material === 'steel' ? ' selected' : '') + '>Rigid Steel (Diamond stiff)</option>' +
+        '<option value="aluminum"' + (r.material === 'aluminum' ? ' selected' : '') + '>Aluminum</option>' +
+        '<option value="carbon"' + (r.material === 'carbon' ? ' selected' : '') + '>Carbon Fiber</option>' +
+        '<option value="wood"' + (r.material === 'wood' ? ' selected' : '') + '>Composite Wood</option>' +
+        '<option value="rubber"' + (r.material === 'rubber' ? ' selected' : '') + '>Rubber / Elastic Band</option>' +
+        '<option value="spring"' + (r.material === 'spring' ? ' selected' : '') + '>Coil Spring</option>' +
+        '</select></div>' +
+        '<div class="form-group"><label>Length</label><input type="number" id="insLen" value="' + Math.round(r.length) + '" step="1" min="5"></div>' +
+        '<div class="form-group"><label>Width</label><input type="number" id="insWidth" value="' + (r.width || 12) + '" step="1" min="4"></div>' +
+        '<div class="form-group"><label>Color</label><input type="color" id="insColor" value="' + (r.color || '#3b82f6') + '"></div>';
+
+      saveHandler = function() {
+        editor.saveState();
+        var matKey = document.getElementById('insMat').value;
+        var mat = PhysicsSystem.Materials[matKey] || PhysicsSystem.Materials.steel;
+        r.material = matKey;
+        r.compliance = mat.compliance;
+        r.length = Math.max(5, parseFloat(document.getElementById('insLen').value) || r.length);
+        r.width = Math.max(4, parseInt(document.getElementById('insWidth').value, 10) || r.width);
+        r.color = document.getElementById('insColor').value || mat.color;
+        editor._notifyChange();
+      };
+    }
+
+    modal.style.display = 'flex';
+
+    var onApply = function() {
+      if (saveHandler) saveHandler();
+      closeInspector();
+    };
+    btnSave.onclick = onApply;
+    btnCancel.onclick = closeInspector;
+    btnClose.onclick = closeInspector;
+  }
+
+  function closeInspector() {
+    var modal = document.getElementById('inspectorModal');
+    if (modal) modal.style.display = 'none';
   }
 
   function loop(timestamp) {

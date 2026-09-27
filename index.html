@@ -226,6 +226,42 @@
     .context-item.danger:hover {
       background: #fef2f2;
     }
+    /* Modal Inspector */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.45);
+      backdrop-filter: blur(2px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2000;
+    }
+    .modal-card {
+      background: #ffffff;
+      border-radius: 8px;
+      width: 320px;
+      max-width: 90vw;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+      border: 1px solid #cbd5e1;
+      display: flex;
+      flex-direction: column;
+    }
+    .modal-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid #e2e8f0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-header h3 { margin: 0; font-size: 0.95rem; font-weight: 600; }
+    .btn-close { border: none; background: none; font-size: 1.25rem; cursor: pointer; color: #64748b; padding: 0; }
+    .modal-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; font-size: 0.82rem; }
+    .form-group { display: flex; flex-direction: column; gap: 4px; }
+    .form-group label { font-weight: 600; color: #475569; }
+    .form-group input, .form-group select { width: 100%; padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 4px; }
+    .modal-footer { padding: 10px 16px; border-top: 1px solid #e2e8f0; display: flex; justify-content: flex-end; gap: 8px; }
+    .btn-primary { background: #2563eb; color: #ffffff; border-color: #1d4ed8; }
   </style>
 </head>
 <body>
@@ -271,7 +307,7 @@
 <main class="workspace">
   <canvas id="maincanvas"></canvas>
   <div class="overlay-hints">
-    Left-drag: Move or Drag-to-connect Rods &bull; Right-click: Context Menu &bull; Space: Play/Pause &bull; Wheel: Zoom &bull; Middle-drag: Pan
+    Left-drag: Move or Drag-to-connect Rods &bull; Drag Empty Space: Pan &bull; Right-click / Long-press: Context Menu &bull; Space: Play/Pause &bull; Wheel: Zoom
   </div>
 </main>
 
@@ -298,6 +334,7 @@
   </div>
 
   <div class="options-bar">
+    <label><input type="checkbox" id="toggleGravity"> Gravity</label>
     <label><input type="checkbox" id="toggleStress" checked> Stress</label>
     <label><input type="checkbox" id="toggleTraces" checked> Traces</label>
   </div>
@@ -305,11 +342,27 @@
 
 <div id="contextMenu"></div>
 
+<!-- Element Property Inspector Modal -->
+<div id="inspectorModal" class="modal-overlay" style="display:none;">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h3 id="inspectorTitle">Configure Element</h3>
+      <button id="btnInspectorClose" class="btn-close">&times;</button>
+    </div>
+    <div id="inspectorBody" class="modal-body"></div>
+    <div class="modal-footer">
+      <button id="btnInspectorCancel">Cancel</button>
+      <button id="btnInspectorSave" class="btn-primary">Apply</button>
+    </div>
+  </div>
+</div>
+
 <script src="./js/math2d.js"></script>
 <script src="./js/physics.js"></script>
 <script src="./js/timeline.js"></script>
 <script src="./js/sprites.js"></script>
 <script src="./js/editor.js"></script>
+<script src="./js/api.js"></script>
 <script src="./js/app.js"></script>
 </body>
 </html>
