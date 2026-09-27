@@ -21,12 +21,14 @@
   // Context menu elements
   var contextMenuEl;
   var radialMenuEl;
+  var hoverTip;
 
   function init() {
     canvas = document.getElementById('maincanvas');
     ctx = canvas.getContext('2d');
     contextMenuEl = document.getElementById('contextMenu');
     radialMenuEl = document.getElementById('radialMenu');
+    hoverTip = document.getElementById('hoverTip');
 
     physics = new PhysicsSystem();
     timeline = new Timeline(physics);
@@ -35,6 +37,8 @@
       loadModelIntoPhysics(modelJSON);
     });
     renderer = editor.renderer;
+    renderer.hidePins = true;
+    editor.renderer.hidePins = true;
 
     // Wire Direct Physics Interactions
     editor.onHumanInputStart = function(type, id) {
@@ -100,8 +104,8 @@
     bindPlaybackControls();
     bindKeyboardShortcuts();
 
-    // Load initial preset (Klann Walker)
-    loadPreset('klann');
+    // Load initial preset (Interaction Sandbox)
+    loadPreset('sandbox');
 
     // Default to Simulate mode running
     setMode('simulate');
@@ -116,8 +120,84 @@
       });
     }
 
+    // Also suppress the native menu over radial menu / context menu / workspace
+    document.addEventListener('contextmenu', function(e) {
+      var t = e.target;
+      if (t && t.closest && (t.closest('#radialMenu') || t.closest('#contextMenu') || t.closest('.workspace'))) {
+        e.preventDefault();
+      }
+    });
+
+    // Hover tooltip: name the element under the cursor before you click
+    if (mainCanvas) {
+      mainCanvas.addEventListener('mousemove', updateHoverTip);
+      mainCanvas.addEventListener('mouseleave', function() {
+        if (hoverTip) hoverTip.style.display = 'none';
+      });
+    }
+
     // Start requestAnimationFrame loop
     requestAnimationFrame(loop);
+  }
+
+  function describeElement(elem) {
+    if (!elem) return '';
+    var item = elem.item;
+    if (elem.type === 'node') {
+      return 'Node #' + item.id + (item.fixed ? '  (ground pin)' : '  (joint)  m=' + (item.mass || 1));
+    }
+    if (elem.type === 'rod') {
+      return 'Beam #' + elem.index + '  ' + Math.round(item.length) + ' mm';
+    }
+    if (elem.type === 'spring') {
+      return 'Spring #' + elem.index + '  k=' + Math.round(item.stiffness);
+    }
+    if (elem.type === 'slider') {
+      return 'Slider #' + elem.index + ((item.minT !== undefined && item.maxT !== undefined) ? '  end-stopped' : '  free travel');
+    }
+    if (elem.type === 'gear') {
+      return 'Gear #' + elem.index + '  ' + item.teeth + 'T  r=' + Math.round(item.radius);
+    }
+    if (elem.type === 'motor') {
+      var unlimited = (item.maxTorque === undefined || item.maxTorque === null || !isFinite(item.maxTorque));
+      return 'Motor #' + elem.index + '  ' + (item.speed || 0) + ' rad/s  ' + (unlimited ? '(unlimited torque)' : '(max ' + Math.round(item.maxTorque) + ')');
+    }
+    if (elem.type === 'pulley') {
+      return 'Pulley #' + elem.index + '  r=' + Math.round(item.radius);
+    }
+    if (elem.type === 'cam') {
+      return 'Cam #' + elem.index + '  ' + item.profileType;
+    }
+    if (elem.type === 'belt') {
+      return 'Belt #' + elem.index + (item.crossed ? '  (crossed)' : '  (open)');
+    }
+    if (elem.type === 'geneva') {
+      return 'Geneva #' + elem.index + '  ' + item.slots + ' slots';
+    }
+    return elem.type + ' #' + elem.index;
+  }
+
+  function updateHoverTip(e) {
+    if (!hoverTip) return;
+    if (editor.isPanning || editor.isDragging || editor.isConnecting || editor.isConnectingSpring || editor._isDraggingSliderAssembly) {
+      hoverTip.style.display = 'none';
+      return;
+    }
+    var w = editor.screenToWorld(e.clientX, e.clientY);
+    var elem = editor.findElementNear(w.x, w.y);
+    var text = elem ? describeElement(elem) : '';
+    if (!text) {
+      var li = editor.findLabelNear(w.x, w.y);
+      if (li !== -1) text = 'Label: ' + editor.labels[li].text;
+    }
+    if (text) {
+      hoverTip.textContent = text;
+      hoverTip.style.display = 'block';
+      hoverTip.style.left = Math.max(4, Math.min(window.innerWidth - 12, e.clientX + 14)) + 'px';
+      hoverTip.style.top = Math.max(4, Math.min(window.innerHeight - 12, e.clientY + 16)) + 'px';
+    } else {
+      hoverTip.style.display = 'none';
+    }
   }
 
   function handleResize() {
@@ -300,7 +380,42 @@
     if (preset) {
       editor.loadJSON(preset);
       document.getElementById('presetSelect').value = name;
+      fitViewToModel();
     }
+  }
+
+  function fitViewToModel() {
+    if (!editor || !editor.nodes || editor.nodes.length === 0) return;
+    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (var i = 0; i < editor.nodes.length; i++) {
+      var n = editor.nodes[i];
+      if (n.x < minX) minX = n.x;
+      if (n.x > maxX) maxX = n.x;
+      if (n.y < minY) minY = n.y;
+      if (n.y > maxY) maxY = n.y;
+    }
+    if (editor.labels) {
+      for (var l = 0; l < editor.labels.length; l++) {
+        var lb = editor.labels[l];
+        var fs = lb.fontSize || 12;
+        var lw = (lb.text ? lb.text.length : 0) * fs * 0.55;
+        if (lb.x < minX) minX = lb.x;
+        if (lb.y < minY) minY = lb.y;
+        if (lb.x + lw > maxX) maxX = lb.x + lw;
+        if (lb.y + fs * 1.5 > maxY) maxY = lb.y + fs * 1.5;
+      }
+    }
+    var margin = 40;
+    var w = (maxX - minX) + margin * 2;
+    var h = (maxY - minY) + margin * 2;
+    if (w <= 0 || h <= 0) return;
+    var zoom = Math.min(canvas.width / w, canvas.height / h);
+    zoom = Math.max(0.2, Math.min(1.0, zoom));
+    editor.zoom = zoom;
+    editor.panX = canvas.width / 2 - ((minX + maxX) / 2) * zoom;
+    editor.panY = canvas.height / 2 - ((minY + maxY) / 2) * zoom;
+    editor.hasInitialPan = true;
+    editor.render(physics);
   }
 
   function bindHeaderControls() {
@@ -376,22 +491,6 @@
       timeline.setSpeed(parseFloat(e.target.value));
     });
 
-    // Checkboxes
-    var gravToggle = document.getElementById('toggleGravity');
-    if (gravToggle) {
-      gravToggle.addEventListener('change', function(e) {
-        physics.gravityY = e.target.checked ? 980 : 0;
-        timeline.invalidateLoop();
-      });
-    }
-
-    var loopToggle = document.getElementById('toggleLoopCache');
-    if (loopToggle) {
-      loopToggle.addEventListener('change', function(e) {
-        timeline.setLoopCacheEnabled(e.target.checked);
-      });
-    }
-
     var loopBadge = document.getElementById('loopBadge');
     timeline.onLoopStatusChanged = function(info) {
       if (loopBadge) {
@@ -428,48 +527,6 @@
         }
       }
     };
-
-    var hidePinsToggle = document.getElementById('toggleHidePins');
-    if (hidePinsToggle) {
-      hidePinsToggle.addEventListener('change', function(e) {
-        renderer.hidePins = e.target.checked;
-        editor.renderer.hidePins = e.target.checked;
-        editor.render(physics);
-      });
-    }
-
-    var stressToggle = document.getElementById('toggleStress');
-    if (stressToggle) {
-      stressToggle.addEventListener('change', function(e) {
-        renderer.showStress = e.target.checked;
-        editor.renderer.showStress = e.target.checked;
-      });
-    }
-
-    var traceToggle = document.getElementById('toggleTraces');
-    if (traceToggle) {
-      traceToggle.addEventListener('change', function(e) {
-        renderer.showTraces = e.target.checked;
-        editor.renderer.showTraces = e.target.checked;
-        editor.render(physics);
-      });
-    }
-
-    var dimToggle = document.getElementById('toggleDimensions');
-    if (dimToggle) {
-      dimToggle.addEventListener('change', function(e) {
-        editor.renderer.showDimensions = e.target.checked;
-        editor.render(physics);
-      });
-    }
-
-    var velToggle = document.getElementById('toggleVelocities');
-    if (velToggle) {
-      velToggle.addEventListener('change', function(e) {
-        editor.renderer.showVelocities = e.target.checked;
-        editor.render(physics);
-      });
-    }
 
     var lastUIUpdateFrame = -1;
     timeline.onFrameChanged = function(curr, total, isPlaying) {
@@ -513,6 +570,8 @@
         selectTool('add_lever');
       } else if (e.key === 'g' || e.key === 'G') {
         selectTool('add_gear');
+      } else if (e.key === 'b' || e.key === 'B') {
+        selectTool('add_belt');
       } else if (e.key === 'm' || e.key === 'M') {
         selectTool('add_motor');
       } else if (e.key === 't' || e.key === 'T') {
@@ -550,441 +609,364 @@
   }
 
   function showContextMenu(clientX, clientY, targetType, targetData) {
-    if (!radialMenuEl) return;
-    radialMenuEl.innerHTML = '';
-    radialMenuEl.style.display = 'block';
-
-    // Position radial menu safely inside screen bounds
-    var cx = Math.max(30, Math.min(window.innerWidth - 30, clientX));
-    var cy = Math.max(30, Math.min(window.innerHeight - 30, clientY));
-    radialMenuEl.style.left = cx + 'px';
-    radialMenuEl.style.top = cy + 'px';
+    if (!contextMenuEl) return;
+    if (radialMenuEl) radialMenuEl.style.display = 'none';
+    if (hoverTip) hoverTip.style.display = 'none';
 
     var typeName = (targetType || 'MENU').toUpperCase();
-    var subText = 'CLICK';
+    var subText = '';
+    var sections = [];
 
-    var innerItems = [];
-    var outerItems = [];
+    function section(title) {
+      var s = { title: title, items: [] };
+      sections.push(s);
+      return s;
+    }
+    function item(sec, label, action, opts) {
+      opts = opts || {};
+      sec.items.push({ label: label, action: action, danger: !!opts.danger, active: !!opts.active });
+    }
+
+    function selectElement(type, index) {
+      setMode('edit');
+      selectTool('select');
+      var it = null;
+      if (type === 'node') {
+        it = editor.getNodeById(index);
+        editor.selectedNodeId = index;
+      } else if (type === 'rod') it = editor.rods[index];
+      else if (type === 'spring') it = editor.springs[index];
+      else if (type === 'slider') it = editor.sliders[index];
+      else if (type === 'gear') it = editor.gears[index];
+      else if (type === 'pulley') it = editor.pulleys[index];
+      else if (type === 'cam') it = editor.cams[index];
+      editor.selection = { type: type, index: index, id: (type === 'node' ? index : undefined), item: it };
+      editor.render(physics);
+    }
 
     if (targetType === 'node') {
       var n = targetData.item || targetData;
       subText = '#' + n.id;
-      innerItems.push({
-        label: 'Props',
-        action: function() { openInspector('node', n); }
-      });
-      innerItems.push({
-        label: n.fixed ? 'Free' : 'Anchor',
-        action: function() { editor.toggleFixed(n.id); }
-      });
-      innerItems.push({
-        label: 'Beam',
-        action: function() {
-          selectTool('add_rod');
-          editor.connectStartNode = n.id;
-          editor.isConnecting = true;
-        }
-      });
-      innerItems.push({
-        label: 'Spring',
-        action: function() {
-          selectTool('add_spring');
-          editor.connectStartNode = n.id;
-          editor.isConnectingSpring = true;
-        }
-      });
-      innerItems.push({
-        label: editor.trackedNodes.has(n.id) ? 'Untrack' : 'Track',
-        action: function() { editor.toggleTrackNode(n.id); }
-      });
-      innerItems.push({
-        label: 'Delete',
-        danger: true,
-        action: function() { editor.deleteNode(n.id); }
-      });
 
+      var nodeProps = section('NODE');
+      item(nodeProps, 'Properties...', function() { openInspector('node', n); });
+      item(nodeProps, n.fixed ? 'Make Free Joint' : 'Anchor as Pin', function() { editor.toggleFixed(n.id); });
       if (n.fixed) {
-        outerItems.push({
-          label: n.simplified ? 'Stand' : 'Point',
-          action: function() {
-            editor.saveState();
-            n.simplified = !n.simplified;
-            editor._notifyChange();
-          }
+        item(nodeProps, n.simplified ? 'Show Ground Stand' : 'Simplify to Point', function() {
+          editor.saveState();
+          n.simplified = !n.simplified;
+          editor._notifyChange();
         });
       }
-      outerItems.push({
-        label: 'Cam',
-        action: function() { editor.addCam(n.id, 'pear', 35, 25); }
+
+      var nodeView = section('VIEW');
+      item(nodeView, editor.trackedNodes.has(n.id) ? 'Untrack Trace' : 'Track Trace', function() { editor.toggleTrackNode(n.id); });
+      item(nodeView, n.showVelocity ? 'Hide Velocity' : 'Show Velocity', function() {
+        n.showVelocity = !n.showVelocity;
+        editor.render(physics);
       });
-      outerItems.push({
-        label: 'Vector Cam',
-        action: function() { openCustomCamModal(n.id); }
+
+      var nodeConnect = section('CONNECT');
+      item(nodeConnect, 'Beam from here', function() {
+        selectTool('add_rod');
+        editor.connectStartNode = n.id;
+        editor.isConnecting = true;
       });
-      outerItems.push({
-        label: 'Pulley',
-        action: function() { editor.addPulley(n.id, 35); }
+      item(nodeConnect, 'Spring from here', function() {
+        selectTool('add_spring');
+        editor.connectStartNode = n.id;
+        editor.isConnectingSpring = true;
       });
+
+      var nodeAttach = section('ATTACH');
+      item(nodeAttach, 'Cam', function() { editor.addCam(n.id, 'pear', 35, 25); });
+      item(nodeAttach, 'Vector Cam...', function() { openCustomCamModal(n.id); });
+      item(nodeAttach, 'Pulley', function() { editor.addPulley(n.id, 35); });
       var nearGear = editor.findGearNear(n.x, n.y);
       if (nearGear !== -1) {
-        outerItems.push({
-          label: 'Lock Gear',
-          action: function() { editor.attachNodeToGear(n.id, nearGear); }
-        });
+        item(nodeAttach, 'Lock to Gear', function() { editor.attachNodeToGear(n.id, nearGear); });
       }
       var slIdx = editor.sliders.findIndex(function(s) { return s.node === n.id; });
       if (slIdx !== -1) {
-        outerItems.push({
-          label: 'Slider Rail',
-          action: function() { openInspector('slider', { index: slIdx, slider: editor.sliders[slIdx] }); }
-        });
+        item(nodeAttach, 'Slider Rail...', function() { openInspector('slider', { index: slIdx, slider: editor.sliders[slIdx] }); });
       }
       var motIdx = editor.motors.findIndex(function(m) { return m.centerNode === n.id || m.crankNode === n.id; });
       if (motIdx !== -1) {
-        outerItems.push({
-          label: 'Motor',
-          action: function() { openInspector('motor', { index: motIdx, motor: editor.motors[motIdx] }); }
-        });
+        item(nodeAttach, 'Motor...', function() { openInspector('motor', { index: motIdx, motor: editor.motors[motIdx] }); });
       }
+
+      item(section('DELETE'), 'Delete Node', function() { editor.deleteNode(n.id); }, { danger: true });
+
     } else if (targetType === 'rod') {
-      var rIdx = targetData.index;
-      var r = targetData.rod || targetData.item || editor.rods[rIdx];
+      var rodIdx = targetData.index;
+      var r = targetData.rod || targetData.item || editor.rods[rodIdx];
       typeName = 'BEAM';
-      subText = '#' + rIdx;
-      innerItems.push({
-        label: 'Props',
-        action: function() { openInspector('rod', targetData); }
+      subText = '#' + rodIdx;
+      var rodProps = section('BEAM');
+      item(rodProps, 'Properties...', function() { openInspector('rod', targetData); });
+      item(rodProps, 'Delete Beam', function() {
+        editor.saveState();
+        editor.rods.splice(rodIdx, 1);
+        editor.selection = null;
+        editor._notifyChange();
+      }, { danger: true });
+
+      var rodOrient = section('ORIENTATION LOCK');
+      item(rodOrient, 'Lock Horizontal', function() {
+        editor.saveState(); r.angleLock = 'horizontal'; editor._notifyChange();
+      }, { active: r.angleLock === 'horizontal' });
+      item(rodOrient, 'Lock Vertical', function() {
+        editor.saveState(); r.angleLock = 'vertical'; editor._notifyChange();
+      }, { active: r.angleLock === 'vertical' });
+      item(rodOrient, 'Lock Current Angle', function() {
+        editor.saveState();
+        r.angleLock = 'fixed';
+        var na = editor.getNodeById(r.a), nb = editor.getNodeById(r.b);
+        if (na && nb) r.lockedAngle = Math.atan2(nb.y - na.y, nb.x - na.x);
+        editor._notifyChange();
+      }, { active: r.angleLock === 'fixed' });
+      item(rodOrient, 'Unlock', function() {
+        editor.saveState(); r.angleLock = 'none'; editor._notifyChange();
+      }, { active: !r.angleLock || r.angleLock === 'none' });
+
+      var rodView = section('VIEW');
+      item(rodView, ((r.showStress !== undefined) ? r.showStress : renderer.showStress) ? 'Hide Stress' : 'Show Stress', function() {
+        r.showStress = !((r.showStress !== undefined) ? r.showStress : renderer.showStress);
+        editor.render(physics);
       });
-      innerItems.push({
-        label: 'Lock Horiz',
-        action: function() {
-          editor.saveState();
-          r.angleLock = 'horizontal';
-          editor._notifyChange();
-        }
+      item(rodView, ((r.showDimensions !== undefined) ? r.showDimensions : renderer.showDimensions) ? 'Hide Dimensions' : 'Show Dimensions', function() {
+        r.showDimensions = !((r.showDimensions !== undefined) ? r.showDimensions : renderer.showDimensions);
+        editor.render(physics);
       });
-      innerItems.push({
-        label: 'Lock Vert',
-        action: function() {
-          editor.saveState();
-          r.angleLock = 'vertical';
-          editor._notifyChange();
-        }
-      });
-      innerItems.push({
-        label: 'Lock Angle',
-        action: function() {
-          editor.saveState();
-          r.angleLock = 'fixed';
-          var na = editor.getNodeById(r.a);
-          var nb = editor.getNodeById(r.b);
-          if (na && nb) {
-            r.lockedAngle = Math.atan2(nb.y - na.y, nb.x - na.x);
-          }
-          editor._notifyChange();
-        }
-      });
-      innerItems.push({
-        label: 'Unlock',
-        action: function() {
-          editor.saveState();
-          r.angleLock = 'none';
-          editor._notifyChange();
-        }
-      });
-      innerItems.push({
-        label: 'Delete',
-        danger: true,
-        action: function() {
-          editor.saveState();
-          editor.rods.splice(rIdx, 1);
-          editor.selection = null;
-          editor._notifyChange();
-        }
-      });
+
     } else if (targetType === 'slider') {
-      var slIdx = targetData.index;
-      var sl = targetData.slider || targetData.item || editor.sliders[slIdx];
-      subText = '#' + slIdx;
-      innerItems.push({
-        label: 'Props',
-        action: function() { openInspector('slider', targetData); }
+      var slIdx2 = targetData.index;
+      var sl = targetData.slider || targetData.item || editor.sliders[slIdx2];
+      subText = '#' + slIdx2;
+      var slProps = section('SLIDER');
+      item(slProps, 'Properties...', function() { openInspector('slider', targetData); });
+      item(slProps, 'Delete Slider', function() { editor.deleteSlider(slIdx2); }, { danger: true });
+      var slRail = section('RAIL ORIENTATION');
+      item(slRail, 'Horizontal (0 deg)', function() { editor.rotateSliderRail(slIdx2, 0); });
+      item(slRail, 'Vertical (90 deg)', function() { editor.rotateSliderRail(slIdx2, 90); });
+      item(slRail, 'Rotate +45 deg', function() {
+        var na = editor.getNodeById(sl.aNode), nb = editor.getNodeById(sl.bNode);
+        var curDeg = (na && nb) ? Math.round(Math.atan2(nb.y - na.y, nb.x - na.x) * 180 / Math.PI) : 0;
+        editor.rotateSliderRail(slIdx2, curDeg + 45);
       });
-      innerItems.push({
-        label: 'Horiz (0°)',
-        action: function() { editor.rotateSliderRail(slIdx, 0); }
-      });
-      innerItems.push({
-        label: 'Vert (90°)',
-        action: function() { editor.rotateSliderRail(slIdx, 90); }
-      });
-      innerItems.push({
-        label: 'Rot +45°',
-        action: function() {
-          var na = editor.getNodeById(sl.aNode), nb = editor.getNodeById(sl.bNode);
-          var curDeg = (na && nb) ? Math.round(Math.atan2(nb.y - na.y, nb.x - na.x) * 180 / Math.PI) : 0;
-          editor.rotateSliderRail(slIdx, curDeg + 45);
-        }
-      });
-      innerItems.push({
-        label: 'Free Travel',
-        action: function() {
-          editor.saveState();
-          sl.minT = undefined;
-          sl.maxT = undefined;
-          editor._notifyChange();
-        }
-      });
-      innerItems.push({
-        label: 'Delete',
-        danger: true,
-        action: function() { editor.deleteSlider(slIdx); }
-      });
+      item(slRail, 'Free Travel (no end-stops)', function() {
+        editor.saveState();
+        sl.minT = undefined;
+        sl.maxT = undefined;
+        editor._notifyChange();
+      }, { active: sl.minT === undefined && sl.maxT === undefined });
+
     } else if (targetType === 'gear') {
       var gIdx = targetData.index;
       var g = targetData.gear || targetData.item || editor.gears[gIdx];
       subText = '#' + gIdx;
-      innerItems.push({
-        label: 'Props',
-        action: function() { openInspector('gear', targetData); }
-      });
-      innerItems.push({
-        label: 'Add Pin Here',
-        action: function() { editor.createPinOnTarget(targetData, editor.mouseWorldX, editor.mouseWorldY); }
-      });
-      innerItems.push({
-        label: 'Crankpin',
-        action: function() { editor.addCrankpinOnGear(gIdx); }
-      });
-      innerItems.push({
-        label: 'Drive Motor',
-        action: function() { editor.addMotor(g.centerNode, g.centerNode, 3.0); }
-      });
-      innerItems.push({
-        label: 'Mount Cam',
-        action: function() { editor.addCam(g.centerNode, 'pear', 35, 25); }
-      });
-      innerItems.push({
-        label: 'Delete',
-        danger: true,
-        action: function() { editor.deleteGear(gIdx); }
-      });
+      var gearProps = section('GEAR');
+      item(gearProps, 'Properties...', function() { openInspector('gear', targetData); });
+      item(gearProps, 'Delete Gear', function() { editor.deleteGear(gIdx); }, { danger: true });
+      var gearAct = section('ADD TO GEAR');
+      item(gearAct, 'Add Pin Here', function() { editor.createPinOnTarget(targetData, editor.mouseWorldX, editor.mouseWorldY); });
+      item(gearAct, 'Add Crankpin', function() { editor.addCrankpinOnGear(gIdx); });
+      item(gearAct, 'Drive Motor', function() { editor.addMotor(g.centerNode, g.centerNode, 3.0); });
+      item(gearAct, 'Mount Cam', function() { editor.addCam(g.centerNode, 'pear', 35, 25); });
+
     } else if (targetType === 'spring') {
       var spIdx = targetData.index;
       var spr = targetData.spring || targetData.item || editor.springs[spIdx];
       subText = '#' + spIdx;
-      innerItems.push({
-        label: 'Props',
-        action: function() { openInspector('spring', targetData); }
+      var sprProps = section('SPRING');
+      item(sprProps, 'Properties...', function() { openInspector('spring', targetData); });
+      item(sprProps, 'Stiffer (x1.5)', function() {
+        editor.saveState(); spr.stiffness = Math.round((spr.stiffness || 200) * 1.5); editor._notifyChange();
       });
-      innerItems.push({
-        label: 'Stiffer',
-        action: function() {
-          editor.saveState();
-          spr.stiffness = Math.round((spr.stiffness || 200) * 1.5);
-          editor._notifyChange();
-        }
+      item(sprProps, 'Softer (x0.7)', function() {
+        editor.saveState(); spr.stiffness = Math.round((spr.stiffness || 200) * 0.7); editor._notifyChange();
       });
-      innerItems.push({
-        label: 'Softer',
-        action: function() {
-          editor.saveState();
-          spr.stiffness = Math.round((spr.stiffness || 200) * 0.7);
-          editor._notifyChange();
-        }
-      });
-      innerItems.push({
-        label: 'Delete',
-        danger: true,
-        action: function() { editor.deleteSpring(spIdx); }
-      });
+      item(sprProps, 'Delete Spring', function() { editor.deleteSpring(spIdx); }, { danger: true });
+
     } else if (targetType === 'pulley') {
       var pIdx = targetData.index;
       var pItem = targetData.pulley || targetData.item || editor.pulleys[pIdx];
       subText = '#' + pIdx;
-      innerItems.push({
-        label: 'Props',
-        action: function() { openInspector('pulley', targetData); }
+      var pulProps = section('PULLEY');
+      item(pulProps, 'Properties...', function() { openInspector('pulley', targetData); });
+      item(pulProps, 'Delete Pulley', function() { editor.deletePulley(pIdx); }, { danger: true });
+      var pulAct = section('ADD TO PULLEY');
+      item(pulAct, 'Add Pin Here', function() { editor.createPinOnTarget(targetData, editor.mouseWorldX, editor.mouseWorldY); });
+      item(pulAct, 'Belt to another pulley...', function() {
+        selectTool('add_belt');
+        editor._beltStartPulley = pIdx;
       });
-      innerItems.push({
-        label: 'Add Pin Here',
-        action: function() { editor.createPinOnTarget(targetData, editor.mouseWorldX, editor.mouseWorldY); }
-      });
-      innerItems.push({
-        label: 'Drive Motor',
-        action: function() { editor.addMotor(pItem.nodeId, pItem.nodeId, 3.0); }
-      });
-      innerItems.push({
-        label: 'Delete',
-        danger: true,
-        action: function() { editor.deletePulley(pIdx); }
-      });
+      item(pulAct, 'Drive Motor', function() { editor.addMotor(pItem.nodeId, pItem.nodeId, 3.0); });
+
     } else if (targetType === 'cam') {
       var cIdx = targetData.index;
       var cItem = targetData.cam || targetData.item || editor.cams[cIdx];
       subText = '#' + cIdx;
-      innerItems.push({
-        label: 'Props',
-        action: function() { openInspector('cam', targetData); }
-      });
-      innerItems.push({
-        label: 'Add Pin Here',
-        action: function() { editor.createPinOnTarget(targetData, editor.mouseWorldX, editor.mouseWorldY); }
-      });
-      innerItems.push({
-        label: 'Vector Cam',
-        action: function() { openCustomCamModal(cItem.centerNode, cIdx); }
-      });
-      innerItems.push({
-        label: 'Drive Motor',
-        action: function() { editor.addMotor(cItem.centerNode, cItem.centerNode, 3.0); }
-      });
-      innerItems.push({
-        label: 'Delete',
-        danger: true,
-        action: function() { editor.deleteCam(cIdx); }
-      });
+      var camProps = section('CAM');
+      item(camProps, 'Properties...', function() { openInspector('cam', targetData); });
+      item(camProps, 'Delete Cam', function() { editor.deleteCam(cIdx); }, { danger: true });
+      var camAct = section('ADD TO CAM');
+      item(camAct, 'Add Pin Here', function() { editor.createPinOnTarget(targetData, editor.mouseWorldX, editor.mouseWorldY); });
+      item(camAct, 'Vector Cam...', function() { openCustomCamModal(cItem.centerNode, cIdx); });
+      item(camAct, 'Drive Motor', function() { editor.addMotor(cItem.centerNode, cItem.centerNode, 3.0); });
+
     } else if (targetType === 'belt') {
       var bIdx = targetData.index;
       var bItem = targetData.belt || targetData.item || editor.belts[bIdx];
       subText = '#' + bIdx;
-      innerItems.push({
-        label: bItem && bItem.crossed ? 'Uncross' : 'Cross Belt',
-        action: function() {
-          editor.saveState();
-          if (bItem) bItem.crossed = !bItem.crossed;
-          editor._notifyChange();
-        }
-      });
-      innerItems.push({
-        label: 'Delete',
-        danger: true,
-        action: function() { editor.deleteBelt(bIdx); }
-      });
+      var beltProps = section('BELT');
+      item(beltProps, (bItem && bItem.crossed) ? 'Uncross Belt' : 'Cross Belt', function() {
+        editor.saveState();
+        if (bItem) bItem.crossed = !bItem.crossed;
+        editor._notifyChange();
+      }, { active: bItem && bItem.crossed });
+      item(beltProps, 'Delete Belt', function() { editor.deleteBelt(bIdx); }, { danger: true });
+
     } else if (targetType === 'geneva') {
       var genIdx = targetData.index;
       subText = '#' + genIdx;
-      innerItems.push({
-        label: 'Props',
-        action: function() { openInspector('geneva', targetData); }
+      var genProps = section('GENEVA');
+      item(genProps, 'Properties...', function() { openInspector('geneva', targetData); });
+      item(genProps, 'Add Pin Here', function() { editor.createPinOnTarget(targetData, editor.mouseWorldX, editor.mouseWorldY); });
+      item(genProps, 'Delete Geneva', function() {
+        editor.saveState();
+        editor.genevas.splice(genIdx, 1);
+        editor._notifyChange();
+      }, { danger: true });
+
+    } else if (targetType === 'motor') {
+      var mIdx = targetData.index;
+      var mItem = targetData.motor || targetData.item || editor.motors[mIdx];
+      subText = '#' + mIdx;
+      var motSec = section('MOTOR');
+      item(motSec, 'Properties...', function() { openInspector('motor', targetData); });
+      item(motSec, (mItem.speed >= 0 ? 'Reverse Direction' : 'Run Forward'), function() {
+        editor.saveState();
+        mItem.speed = -(mItem.speed || 1);
+        editor._notifyChange();
       });
-      innerItems.push({
-        label: 'Add Pin Here',
-        action: function() { editor.createPinOnTarget(targetData, editor.mouseWorldX, editor.mouseWorldY); }
-      });
-      innerItems.push({
-        label: 'Delete',
-        danger: true,
-        action: function() {
-          editor.saveState();
-          editor.genevas.splice(genIdx, 1);
-          editor._notifyChange();
-        }
-      });
+      item(motSec, 'Speed: Slow (1.0 rad/s)', function() { editor.saveState(); mItem.speed = 1.0; editor._notifyChange(); });
+      item(motSec, 'Speed: Medium (3.0 rad/s)', function() { editor.saveState(); mItem.speed = 3.0; editor._notifyChange(); });
+      item(motSec, 'Speed: Fast (6.0 rad/s)', function() { editor.saveState(); mItem.speed = 6.0; editor._notifyChange(); });
+      item(motSec, 'Delete Motor', function() { editor.deleteMotor(mIdx); }, { danger: true });
+
     } else {
-      // Empty canvas
       var pos = targetData;
       typeName = 'ADD';
-      subText = 'TOOL';
-      innerItems.push({
-        label: 'Joint',
-        action: function() { editor.addNode(pos.x, pos.y, false); }
+      subText = '';
+      var addSec = section('ADD ELEMENT');
+      item(addSec, 'Joint (free node)', function() { selectElement('node', editor.addNode(pos.x, pos.y, false)); });
+      item(addSec, 'Pin (ground anchor)', function() { selectElement('node', editor.addNode(pos.x, pos.y, true)); });
+      item(addSec, 'Beam', function() {
+        var a = editor.addNode(pos.x - 40, pos.y, false);
+        var b = editor.addNode(pos.x + 40, pos.y, false);
+        editor.addRod(a, b);
+        selectElement('rod', editor.rods.length - 1);
       });
-      innerItems.push({
-        label: 'Pin',
-        action: function() { editor.addNode(pos.x, pos.y, true); }
+      item(addSec, 'Spring', function() {
+        var a = editor.addNode(pos.x - 35, pos.y, false);
+        var b = editor.addNode(pos.x + 35, pos.y, false);
+        editor.addSpring(a, b);
+        selectElement('spring', editor.springs.length - 1);
       });
-      innerItems.push({
-        label: 'Beam',
-        action: function() {
-          var a = editor.addNode(pos.x - 40, pos.y, false);
-          var b = editor.addNode(pos.x + 40, pos.y, false);
-          editor.addRod(a, b);
-        }
+      item(addSec, 'Slider', function() {
+        var a = editor.addNode(pos.x - 70, pos.y, true);
+        var b = editor.addNode(pos.x + 70, pos.y, true);
+        var s = editor.addNode(pos.x, pos.y, false);
+        editor.addSlider(s, a, b);
+        selectElement('node', s);
       });
-      innerItems.push({
-        label: 'Spring',
-        action: function() {
-          var a = editor.addNode(pos.x - 35, pos.y, false);
-          var b = editor.addNode(pos.x + 35, pos.y, false);
-          editor.addSpring(a, b);
-        }
+      item(addSec, 'Lever', function() {
+        var lv = editor.addLever(pos.x, pos.y);
+        selectElement('node', lv.handleNode);
       });
-      innerItems.push({
-        label: 'Slider',
-        action: function() {
-          var a = editor.addNode(pos.x - 70, pos.y, true);
-          var b = editor.addNode(pos.x + 70, pos.y, true);
-          var s = editor.addNode(pos.x, pos.y, false);
-          editor.addSlider(s, a, b);
-        }
+      item(addSec, 'Gear', function() {
+        var cId = editor.addNode(pos.x, pos.y, true);
+        editor.addGear(cId, 45, 15);
+        selectElement('gear', editor.gears.length - 1);
       });
-      innerItems.push({
-        label: 'Lever',
-        action: function() { editor.addLever(pos.x, pos.y); }
+      item(addSec, 'Pulley', function() {
+        var cId = editor.addNode(pos.x, pos.y, true);
+        editor.addPulley(cId, 35);
+        selectElement('pulley', editor.pulleys.length - 1);
       });
-      innerItems.push({
-        label: 'Gear',
-        action: function() {
-          var cId = editor.addNode(pos.x, pos.y, true);
-          editor.addGear(cId, 45, 15);
-        }
+      item(addSec, 'Cam', function() {
+        var cId = editor.addNode(pos.x, pos.y, true);
+        editor.addCam(cId, 'pear', 35, 25);
+        selectElement('cam', editor.cams.length - 1);
       });
-      innerItems.push({
-        label: 'Cam',
-        action: function() {
-          var cId = editor.addNode(pos.x, pos.y, true);
-          editor.addCam(cId, 'pear', 35, 25);
-        }
+      item(addSec, 'Motor (pin + crank)', function() {
+        var center = editor.addNode(pos.x - 30, pos.y, true);
+        var crank = editor.addNode(pos.x + 30, pos.y, false);
+        editor.addMotor(center, crank, 3.0);
+        selectElement('node', crank);
+      });
+      item(addSec, 'Text Label', function() {
+        var txt = window.prompt('Label text:', 'Label');
+        if (txt === null || txt.trim() === '') return;
+        editor.addLabel(pos.x, pos.y, txt.trim());
       });
     }
 
-    // Render center hub
-    var hub = document.createElement('div');
-    hub.className = 'radial-center';
-    var hubType = document.createElement('div');
-    hubType.className = 'radial-type';
-    hubType.textContent = typeName;
-    var hubSub = document.createElement('div');
-    hubSub.className = 'radial-sub';
-    hubSub.textContent = subText;
-    hub.appendChild(hubType);
-    hub.appendChild(hubSub);
-    hub.addEventListener('click', function(e) {
-      e.stopPropagation();
-      hideContextMenu();
-    });
-    radialMenuEl.appendChild(hub);
+    var world = section('WORLD');
+    item(world, 'Gravity: ' + (physics.gravityY ? 'On' : 'Off'), function() {
+      physics.gravityY = physics.gravityY ? 0 : 980;
+      timeline.invalidateLoop();
+    }, { active: !!physics.gravityY });
+    item(world, 'Loop Cache: ' + (timeline.loopCacheEnabled ? 'On' : 'Off'), function() {
+      timeline.setLoopCacheEnabled(!timeline.loopCacheEnabled);
+    }, { active: timeline.loopCacheEnabled });
+    item(world, 'Clean Pins (all): ' + (renderer.hidePins ? 'On' : 'Off'), function() {
+      renderer.hidePins = !renderer.hidePins;
+      editor.renderer.hidePins = renderer.hidePins;
+      editor.render(physics);
+    }, { active: renderer.hidePins });
 
-    function renderRing(itemsList, radius) {
-      var count = itemsList.length;
-      if (count === 0) return;
-      var angleStep = (2 * Math.PI) / count;
-      var startAngle = -Math.PI / 2;
-      for (var i = 0; i < count; i++) {
-        (function(it, idx) {
-          var angle = startAngle + idx * angleStep;
-          var btn = document.createElement('div');
-          btn.className = 'radial-item' + (it.danger ? ' danger' : '') + (it.active ? ' active-opt' : '');
-          btn.textContent = it.label;
-          var px = Math.round(Math.cos(angle) * radius);
-          var py = Math.round(Math.sin(angle) * radius);
-          btn.style.left = px + 'px';
-          btn.style.top = py + 'px';
-          btn.addEventListener('click', function(e) {
+    contextMenuEl.innerHTML = '';
+
+    var header = document.createElement('div');
+    header.className = 'context-header';
+    header.textContent = typeName + (subText ? '  ' + subText : '');
+    contextMenuEl.appendChild(header);
+
+    for (var si = 0; si < sections.length; si++) {
+      var sec = sections[si];
+      if (sec.items.length === 0) continue;
+      var group = document.createElement('div');
+      group.className = 'context-group';
+      var title = document.createElement('div');
+      title.className = 'context-group-title';
+      title.textContent = sec.title;
+      group.appendChild(title);
+      for (var ii = 0; ii < sec.items.length; ii++) {
+        (function(it) {
+          var row = document.createElement('div');
+          row.className = 'context-item' + (it.danger ? ' danger' : '') + (it.active ? ' active-opt' : '');
+          row.textContent = it.label;
+          row.addEventListener('click', function(e) {
             e.stopPropagation();
             hideContextMenu();
             it.action();
           });
-          radialMenuEl.appendChild(btn);
-        })(itemsList[i], i);
+          group.appendChild(row);
+        })(sec.items[ii]);
       }
+      contextMenuEl.appendChild(group);
     }
 
-    renderRing(innerItems, innerItems.length > 6 ? 85 : 74);
-    if (outerItems.length > 0) {
-      renderRing(outerItems, 134);
-    }
+    contextMenuEl.style.display = 'block';
+
+    var menuW = contextMenuEl.offsetWidth || 200;
+    var menuH = contextMenuEl.offsetHeight || 200;
+    var px = Math.max(8, Math.min(window.innerWidth - menuW - 8, clientX));
+    var py = Math.max(8, Math.min(window.innerHeight - menuH - 8, clientY));
+    contextMenuEl.style.left = px + 'px';
+    contextMenuEl.style.top = py + 'px';
   }
 
   function hideContextMenu() {
@@ -1138,6 +1120,9 @@
       var hasMin = (sl.minT !== undefined && sl.minT !== null && isFinite(sl.minT));
       var hasMax = (sl.maxT !== undefined && sl.maxT !== null && isFinite(sl.maxT));
       var na = editor.getNodeById(sl.aNode), nb = editor.getNodeById(sl.bNode);
+      var railLen = (na && nb) ? Math.round(Math.hypot(nb.x - na.x, nb.y - na.y)) : 140;
+      var defMin = 16;
+      var defMax = Math.max(20, railLen - 16);
       var curAngleDeg = (na && nb) ? Math.round(Math.atan2(nb.y - na.y, nb.x - na.x) * 180 / Math.PI) : 0;
       bodyEl.innerHTML = 
         '<div class="form-group"><label>Rail Orientation Angle (°)</label>' +
@@ -1148,9 +1133,11 @@
         '<button type="button" id="btnAngle45" style="padding:2px 7px; font-size:0.75rem;">45°</button>' +
         '<button type="button" id="btnAngleM45" style="padding:2px 7px; font-size:0.75rem;">-45°</button>' +
         '</div></div>' +
-        '<div class="form-group"><label><input type="checkbox" id="insEnableStroke" ' + (hasMin || hasMax ? 'checked' : '') + '> Enforce End-Stop Travel Limits</label></div>' +
-        '<div class="form-group"><label>Min Travel Limit</label><input type="number" id="insMinT" value="' + (hasMin ? sl.minT : -100) + '" step="5"></div>' +
-        '<div class="form-group"><label>Max Travel Limit</label><input type="number" id="insMaxT" value="' + (hasMax ? sl.maxT : 100) + '" step="5"></div>' +
+        '<div class="form-group"><label>Rail Length</label><input type="number" value="' + railLen + '" disabled></div>' +
+        '<div class="form-group"><label><input type="checkbox" id="insEnableStroke" ' + (hasMin || hasMax ? 'checked' : '') + '> Enforce End-Stop Travel Limits</label>' +
+        '<div style="font-size:0.68rem;color:#64748b;margin-top:3px;">Travel is measured in px from the rail start (0) to the rail end (' + railLen + ').</div></div>' +
+        '<div class="form-group"><label>Min Travel (px from start)</label><input type="number" id="insMinT" value="' + (hasMin ? sl.minT : defMin) + '" step="5" min="0" max="' + railLen + '"></div>' +
+        '<div class="form-group"><label>Max Travel (px from start)</label><input type="number" id="insMaxT" value="' + (hasMax ? sl.maxT : defMax) + '" step="5" min="0" max="' + railLen + '"></div>' +
         '<div class="form-group"><label>Friction Coefficient</label><input type="number" id="insFric" value="' + (sl.friction || 0) + '" step="0.05" min="0"></div>';
 
       var angleInput = document.getElementById('insRailAngle');
@@ -1167,8 +1154,17 @@
         }
         var enableStroke = document.getElementById('insEnableStroke').checked;
         if (enableStroke) {
-          sl.minT = parseFloat(document.getElementById('insMinT').value) || -100;
-          sl.maxT = parseFloat(document.getElementById('insMaxT').value) || 100;
+          var rawMin = parseFloat(document.getElementById('insMinT').value);
+          var rawMax = parseFloat(document.getElementById('insMaxT').value);
+          if (!isFinite(rawMin)) rawMin = defMin;
+          if (!isFinite(rawMax)) rawMax = defMax;
+          sl.minT = Math.max(0, Math.min(railLen, rawMin));
+          sl.maxT = Math.max(0, Math.min(railLen, rawMax));
+          if (sl.minT > sl.maxT) {
+            var swapT = sl.minT;
+            sl.minT = sl.maxT;
+            sl.maxT = swapT;
+          }
         } else {
           sl.minT = undefined;
           sl.maxT = undefined;
@@ -1690,18 +1686,13 @@
         physicsAccumulator -= FIXED_TIMESTEP;
       }
 
-      // Record motion trace
-      if (physics.numNodes > 0 && timeline.isPlaying) {
-        if (editor.trackedNodes.size > 0) {
-          editor.trackedNodes.forEach(function(nodeId) {
-            if (nodeId < physics.numNodes) {
-              renderer.recordTrace(nodeId, physics.x[nodeId], physics.y[nodeId]);
-            }
-          });
-        } else {
-          var trackNode = physics.numNodes - 1;
-          renderer.recordTrace(trackNode, physics.x[trackNode], physics.y[trackNode]);
-        }
+      // Record motion traces (only for explicitly tracked nodes)
+      if (physics.numNodes > 0 && timeline.isPlaying && editor.trackedNodes.size > 0) {
+        editor.trackedNodes.forEach(function(nodeId) {
+          if (nodeId < physics.numNodes) {
+            renderer.recordTrace(nodeId, physics.x[nodeId], physics.y[nodeId]);
+          }
+        });
       }
     }
 

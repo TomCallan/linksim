@@ -31,30 +31,32 @@ Linksim is a 60+ FPS browser-based 2D mechanical linkage and physics simulator r
   - Automatic periodic loop detection and cached replay.
 - **Reactive Multi-Tier Responsive UI**:
   - Adaptive header that cleanly wraps the 14 blueprint tools into a centered secondary tier on screens <= 1150px, ensuring every tool remains accessible without clipping.
-  - Two-tier responsive playback and options bar separating playback controls and wide scrubbing slider from interactive tactile toggle chips on screens <= 1060px.
+  - Two-tier responsive playback bar with a wide scrubbing slider; display options live on elements via the right-click menu.
   - Zero horizontal scrollbars with real-time `ResizeObserver` canvas height auto-fitting.
 - **Programmatic API for AI Agents**: Full headless or browser automation via `window.LinksimAPI`.
 
 ---
 
-## Example Mechanical Presets
+## Interaction Sandbox Preset
 
-Linksim includes 14 curated, Grashof-compliant mechanical presets:
+Linksim ships with a single **Interaction Sandbox**: one canvas containing independent stations, each annotated with its expected result. Press Play, then drag dark joint nodes, pink knobs, and free beam ends to feel how each element behaves. Drag a gear rim in Simulate mode to turn it by hand.
 
-1. **Four-Bar Linkage**: Fundamental Grashof crank-rocker mechanism demonstrating continuous rotary-to-oscillating motion and coupler curves.
-2. **Slider-Crank Engine**: Inline internal combustion engine layout with rotating crankshaft, connecting rod, and crosshead piston.
-3. **Chebyshev Straight-Line Linkage**: Cognate linkage generating near-perfect linear motion without guide rails.
-4. **Klann Walker Leg**: Mechanical leg linkage mimicking planar insect and animal walking strides with a flat stance phase and high swinging step.
-5. **Theo Jansen Strandbeest Leg**: Kinetic 11-rod linkage with exact proportions producing the famous stepping loop.
-6. **Geared Bell-Crank**: Motor-driven pinion and gear with eccentric pin driving a 90-degree bell crank and vertical piston.
-7. **Compound Gear Train**: Multi-stage speed reduction and torque multiplication using compound intermediate gears.
-8. **Geneva Drive (4-Slot)**: Precision intermittent motion indexing mechanism with drive pin and locking dwell arc.
-9. **Cam & Valve Follower**: Rotating teardrop cam lifting a roller follower against a stiff helical return spring.
-10. **Belt & Pulley Transmission**: Stepped open and crossed belt drives with direction reversal.
-11. **Interactive Gearbox**: Multi-speed transmission with a movable shift lever that dynamically meshes 1st gear, Neutral, and 2nd gear.
-12. **Clock Escapement**: Rotating ratchet escape wheel driving a rocking pallet anchor and pendulum, stepping one tooth per tick.
-13. **Over-Center Toggle Clamp**: Bistable clamp snapping into a rigid locked state when pushed past collinear dead-center.
-14. **Mechanism Gallery**: Six independent mechanisms (slider-crank, gear train, cam follower, oscillator, belt drive, and 4-bar) operating synchronously.
+Right-click any element for a grouped menu: per-element overlays (**Trace** / **Velocity** on a node, **Stress** / **Dims** on a beam), attach/connect actions, and a **World** section for Gravity, Loop Cache, and global Clean Pins. Hovering shows a tooltip naming what you are about to select; clicking a motor's motion-arrow ring selects that motor. Build belts with the **Belt** tool (`B`): click pulley A, then pulley B (hold `Shift` for a crossed belt).
+
+1. **Four-Bar Linkage**: crank-rocker, continuous rotary input to oscillating rocker output.
+2. **Slider-Crank**: crank rotation becomes back-and-forth piston travel on a rail.
+3. **Sliders, Three Directions**: vertical free travel, horizontal travel with end-stops, and a 45-degree rail with friction.
+4. **Springs and Mass**: identical stretch with different stiffness (slow vs fast) and different masses (light vs heavy).
+5. **Cam and Roller Follower**: rotating pear cam lifts a roller pressed by a return spring.
+6. **Gears and Axle**: multi-stage gear train with direction reversal, an orbiting crankpin, and an axle-coupled output gear.
+7. **Geneva Indexer**: driver pin advances a 4-slot wheel 90 degrees per turn, then dwells.
+8. **Belts and Pulleys**: open belt keeps direction, crossed belt reverses it, radii set the ratio.
+9. **Lever / Bell-Crank**: rigid arm swings about a pivot, driven by dragging the pink knob.
+10. **Over-Center Toggle**: drag the knee past the center line and the spring snaps it to the opposite side.
+11. **Orientation-Locked Beams**: beams hold horizontal, vertical, or a fixed angle under drag.
+12. **Motor Torque Limit**: a limited-torque motor slows and can stall against a spring load.
+
+Ground pins render as clean points by default (global **Clean Pins** and per-node simplify live in the right-click menu), and the view auto-fits the whole sandbox on load.
 
 ---
 

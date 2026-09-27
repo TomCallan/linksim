@@ -37,9 +37,9 @@ console.log('Running UI Context Menu & CSS Sanity Test Suite...');
   assert.strictEqual(minBalance, 0, `Unmatched closing brace detected in index.html <style> block near line ${errorLine}`);
   assert.strictEqual(balance, 0, `Unbalanced braces in index.html <style> block (final balance: ${balance})`);
 
-  // Verify options-bar does not have an orphan closing brace before #radialMenu
-  const optionsBarToRadial = htmlContent.match(/\.options-bar[\s\S]*?#radialMenu/);
-  assert(optionsBarToRadial, 'Expected .options-bar and #radialMenu in index.html');
+  // Verify playback bar and context menu exist with balanced braces between them
+  const optionsBarToRadial = htmlContent.match(/\.playback-bar[\s\S]*?#radialMenu/);
+  assert(optionsBarToRadial, 'Expected .playback-bar and #radialMenu in index.html');
 
   const snippet = optionsBarToRadial[0];
   const openCount = (snippet.match(/\{/g) || []).length;
@@ -49,55 +49,31 @@ console.log('Running UI Context Menu & CSS Sanity Test Suite...');
   console.log('PASS: index.html CSS has balanced braces without orphan closing braces');
 }
 
-// Test 2: Radial menu positioning at cursor and safe boundary clamping
+// Test 2: Structured context menu rendering and edge-clamped positioning
 {
   const appJsPath = path.join(__dirname, '../js/app.js');
   const appJsContent = fs.readFileSync(appJsPath, 'utf8');
 
-  // Verify that over-clamping with rMax + 10 is eliminated
+  // Verify the old radial over-clamp is gone
   assert(!appJsContent.includes('rMax + 10'), 'showContextMenu should not clamp using rMax + 10');
 
-  // Extract positioning logic from showContextMenu
-  const match = appJsContent.match(/function showContextMenu\([^)]*\)\s*\{([\s\S]*?radialMenuEl\.style\.top\s*=\s*cy\s*\+\s*'px';)/);
-  assert(match, 'showContextMenu positioning code must exist in js/app.js');
+  // Verify structured grouped menu markup is generated
+  assert(appJsContent.includes("className = 'context-group-title'"), 'Expected grouped context menu titles');
+  assert(appJsContent.includes("className = 'context-header'"), 'Expected context menu header');
+  assert(appJsContent.includes("' active-opt'"), 'Expected active-option styling hook');
 
-  const computeCoords = new Function('clientX', 'clientY', 'window', 'radialMenuEl', match[1]);
+  // Verify cursor placement with edge clamping against the measured menu size
+  assert(appJsContent.includes('Math.max(8, Math.min(window.innerWidth - menuW - 8, clientX))'), 'Missing left edge clamping for context menu');
+  assert(appJsContent.includes('Math.max(8, Math.min(window.innerHeight - menuH - 8, clientY))'), 'Missing top edge clamping for context menu');
+  assert(appJsContent.includes("contextMenuEl.style.display = 'block'"), 'Context menu must be shown before measuring');
 
-  const win = { innerWidth: 1024, innerHeight: 768 };
+  // Verify the empty-space ADD menu exposes every placeable element type
+  ['Joint (free node)', 'Pin (ground anchor)', 'Beam', 'Spring', 'Slider', 'Lever', 'Gear', 'Pulley', 'Cam', 'Motor (pin + crank)', 'Text Label']
+    .forEach(function(label) {
+      assert(appJsContent.includes(label), 'Empty-space add menu is missing: ' + label);
+    });
 
-  // Case A: Normal click well inside bounds (e.g., 100, 100) should stay directly at cursor
-  {
-    const el = { style: {} };
-    computeCoords(100, 100, win, el);
-    assert.strictEqual(el.style.left, '100px', `Expected left to be 100px, got ${el.style.left}`);
-    assert.strictEqual(el.style.top, '100px', `Expected top to be 100px, got ${el.style.top}`);
-  }
-
-  // Case B: Center screen click (500, 350)
-  {
-    const el = { style: {} };
-    computeCoords(500, 350, win, el);
-    assert.strictEqual(el.style.left, '500px', `Expected left to be 500px, got ${el.style.left}`);
-    assert.strictEqual(el.style.top, '350px', `Expected top to be 350px, got ${el.style.top}`);
-  }
-
-  // Case C: Near top-left edge (< 30px) clamps to 30px margin
-  {
-    const el = { style: {} };
-    computeCoords(10, 15, win, el);
-    assert.strictEqual(el.style.left, '30px', `Expected left clamped to 30px, got ${el.style.left}`);
-    assert.strictEqual(el.style.top, '30px', `Expected top clamped to 30px, got ${el.style.top}`);
-  }
-
-  // Case D: Near bottom-right edge clamps to window - 30px margin
-  {
-    const el = { style: {} };
-    computeCoords(1020, 760, win, el);
-    assert.strictEqual(el.style.left, '994px', `Expected left clamped to 994px, got ${el.style.left}`);
-    assert.strictEqual(el.style.top, '738px', `Expected top clamped to 738px, got ${el.style.top}`);
-  }
-
-  console.log('PASS: showContextMenu correctly positions radial menu at cursor with 30px edge clamping');
+  console.log('PASS: Structured context menu with grouped sections and edge-clamped positioning');
 }
 
 // Test 3: Browser global scope script loading without module or exports
@@ -115,7 +91,7 @@ console.log('Running UI Context Menu & CSS Sanity Test Suite...');
 
   assert(fakeWindow.MechanismEditor, 'MechanismEditor must be exported to window in browser environment');
   assert(fakeWindow.MechanismEditor.Presets, 'MechanismEditor.Presets must be defined');
-  assert.strictEqual(Object.keys(fakeWindow.MechanismEditor.Presets).length, 14, 'MechanismEditor.Presets must contain 14 presets');
+  assert.strictEqual(Object.keys(fakeWindow.MechanismEditor.Presets).length, 1, 'MechanismEditor.Presets must contain the single sandbox preset');
 
   console.log('PASS: All scripts evaluate cleanly in browser scope without module/exports');
 }
@@ -135,7 +111,9 @@ console.log('Running UI Context Menu & CSS Sanity Test Suite...');
   assert(html.includes('class="preset-label"'), 'Expected .preset-label in header for responsive display');
   assert(html.includes('class="speed-label"'), 'Expected .speed-label in playback controls for responsive display');
   assert(html.includes('class="btn-text-full"'), 'Expected .btn-text-full for responsive step button labels');
-  assert(html.includes('.options-bar label:has(input:checked)'), 'Expected toggle pill active state selector in CSS');
+  assert(html.includes('.context-item.active-opt'), 'Expected context menu active-option styling');
+  assert(!html.includes('id="toggleGravity"'), 'Bottom-bar option toggles must be removed');
+  assert(!html.includes('class="options-bar"'), 'Bottom options bar must be removed');
 
   // Verify flex wrapping is enabled on both bars to prevent horizontal overflow clipping
   assert(html.includes('flex-wrap: wrap'), 'Expected flex-wrap: wrap on responsive bars');

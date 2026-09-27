@@ -186,7 +186,7 @@
   /**
    * Render dynamic capsule linkage with bushings and optional stress tint.
    */
-  SpriteRenderer.prototype.drawCapsuleLink = function(ctx, x1, y1, x2, y2, width, stress, customColor) {
+  SpriteRenderer.prototype.drawCapsuleLink = function(ctx, x1, y1, x2, y2, width, stress, customColor, showStress) {
     width = width || 12;
     var dx = x2 - x1;
     var dy = y2 - y1;
@@ -202,7 +202,8 @@
 
     // Determine color based on stress or custom
     var baseColor = customColor || '#2563eb';
-    if (this.showStress && stress > 0.005) {
+    var useStress = (showStress === undefined) ? this.showStress : showStress;
+    if (useStress && stress > 0.005) {
       var sNorm = Math.min(1.0, stress * 40);
       var r = Math.round(37 + sNorm * (239 - 37));
       var g = Math.round(99 - sNorm * 40);
@@ -646,7 +647,7 @@
     var color = isStalled ? '#ef4444' : '#f59e0b';
 
     ctx.beginPath();
-    var r = Math.max(12, radius * 0.7);
+    var r = Math.max(18, radius * 0.7);
     var startAngle = 0;
     var endAngle = Math.PI * 1.5;
     var anticlockwise = speed < 0;
@@ -919,12 +920,13 @@
     }
     ctx.restore();
   };
-  SpriteRenderer.prototype.drawTracePaths = function(ctx) {
-    if (!this.showTraces) return;
+  SpriteRenderer.prototype.drawTracePaths = function(ctx, trackedSet) {
     ctx.save();
     for (var id in this.traces) {
       var pts = this.traces[id];
       if (pts.length < 2) continue;
+      var isExplicit = trackedSet && trackedSet.has && trackedSet.has(parseInt(id, 10));
+      if (!this.showTraces && !isExplicit) continue;
       var color = TrackColors[parseInt(id, 10) % TrackColors.length] || 'rgba(239, 68, 68, 0.85)';
       ctx.beginPath();
       ctx.moveTo(pts[0].x, pts[0].y);

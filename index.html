@@ -269,49 +269,6 @@
       white-space: nowrap;
       flex-shrink: 0;
     }
-    .options-bar {
-      display: flex;
-      align-items: center;
-      gap: 5px;
-      font-size: 0.72rem;
-      color: #475569;
-      border-left: 1px solid #e2e8f0;
-      padding-left: 8px;
-      flex-shrink: 0;
-    }
-    .options-bar label {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      padding: 3px 6px;
-      border-radius: 4px;
-      background: #f8fafc;
-      border: 1px solid #e2e8f0;
-      color: #475569;
-      font-size: 0.71rem;
-      font-weight: 500;
-      cursor: pointer;
-      white-space: nowrap;
-      user-select: none;
-      transition: all 0.12s ease;
-    }
-    .options-bar label:hover {
-      background: #f1f5f9;
-      border-color: #cbd5e1;
-      color: #0f172a;
-    }
-    .options-bar label:has(input:checked) {
-      background: #eff6ff;
-      border-color: #93c5fd;
-      color: #1d4ed8;
-      font-weight: 600;
-    }
-    .options-bar input[type="checkbox"] {
-      margin: 0;
-      accent-color: #2563eb;
-      cursor: pointer;
-    }
-
     /* Responsive Bar Media Queries */
     @media (max-width: 1150px) {
       #editTools {
@@ -325,17 +282,6 @@
       }
     }
     @media (max-width: 1060px) {
-      .options-bar {
-        flex-basis: 100%;
-        order: 3;
-        border-left: none;
-        border-top: 1px solid #f1f5f9;
-        padding-left: 0;
-        padding-top: 4px;
-        justify-content: center;
-        gap: 6px;
-        flex-wrap: wrap;
-      }
       .speed-label {
         display: none;
       }
@@ -360,15 +306,6 @@
       .playback-controls button {
         padding: 3px 6px;
         font-size: 0.72rem;
-      }
-      .options-bar {
-        order: 3;
-        gap: 4px;
-        justify-content: space-between;
-      }
-      .options-bar label {
-        padding: 2px 4px;
-        font-size: 0.68rem;
       }
       .btn-text-full {
         display: none;
@@ -515,21 +452,60 @@
       position: fixed;
       background: #ffffff;
       border: 1px solid #cbd5e1;
-      border-radius: 6px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+      padding: 0;
+      z-index: 1500;
+      min-width: 208px;
+      max-height: 86vh;
+      overflow-y: auto;
+    }
+    .context-header {
+      padding: 7px 12px;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #475569;
+      background: #f8fafc;
+      border-bottom: 1px solid #e2e8f0;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+    .context-group {
       padding: 4px 0;
-      z-index: 1000;
-      min-width: 180px;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    .context-group:last-child {
+      border-bottom: none;
+    }
+    .context-group-title {
+      padding: 4px 12px 2px;
+      font-size: 0.6rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #94a3b8;
     }
     .context-item {
-      padding: 6px 14px;
+      padding: 6px 12px 6px 18px;
       font-size: 0.8rem;
       color: #1e293b;
       cursor: pointer;
-      transition: background 0.1s ease;
+      transition: background 0.1s ease, color 0.1s ease;
+      white-space: nowrap;
     }
     .context-item:hover {
-      background: #f1f5f9;
+      background: #eff6ff;
+      color: #2563eb;
+    }
+    .context-item.active-opt {
+      color: #1d4ed8;
+      font-weight: 600;
+    }
+    .context-item.active-opt::before {
+      content: '\2022  ';
       color: #2563eb;
     }
     .context-item.danger {
@@ -537,6 +513,29 @@
     }
     .context-item.danger:hover {
       background: #fef2f2;
+      color: #b91c1c;
+    }
+    .context-item.danger {
+      color: #dc2626;
+    }
+    .context-item.danger:hover {
+      background: #fef2f2;
+    }
+    /* Hover selection tooltip */
+    #hoverTip {
+      display: none;
+      position: fixed;
+      pointer-events: none;
+      background: rgba(15, 23, 42, 0.92);
+      color: #f8fafc;
+      font-size: 0.72rem;
+      font-weight: 500;
+      padding: 4px 8px;
+      border-radius: 5px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.25);
+      z-index: 1600;
+      white-space: nowrap;
+      max-width: 280px;
     }
     /* Modal Inspector */
     .modal-overlay {
@@ -601,6 +600,7 @@
     <button data-tool="add_lever" title="Add Control Lever (L) - Click to place">Lever</button>
     <button data-tool="add_gear" title="Add Gear Wheel (G)">Gear</button>
     <button data-tool="add_pulley" title="Add Pulley Wheel">Pulley</button>
+    <button data-tool="add_belt" title="Connect two pulleys with a Belt (B) - click one pulley then another; hold Shift for a crossed belt">Belt</button>
     <button data-tool="add_cam" title="Add Cam Profile">Cam</button>
     <button data-tool="add_motor" title="Attach Motor (M)">Motor</button>
     <button data-tool="add_label" title="Add Text Label (T) - Click to place">Label</button>
@@ -614,20 +614,7 @@
 
     <label for="presetSelect" class="preset-label" style="font-size:0.75rem; font-weight:500;">Preset:</label>
     <select id="presetSelect">
-      <option value="fourbar">Four-Bar Linkage</option>
-      <option value="sliderCrank">Slider-Crank Engine</option>
-      <option value="chebyshev">Chebyshev Straight-Line</option>
-      <option value="klann">Klann Walker Leg</option>
-      <option value="jansen">Strandbeest Kinetic Leg</option>
-      <option value="gearedBellCrank">Geared Bell-Crank</option>
-      <option value="gearTrain">Compound Gear Train</option>
-      <option value="geneva">Geneva Drive (4-Slot)</option>
-      <option value="camFollower">Cam & Valve Follower</option>
-      <option value="beltDrive">Belt & Pulley Transmission</option>
-      <option value="gearbox">Interactive Gearbox</option>
-      <option value="escapement">Clock Escapement</option>
-      <option value="overcenter">Over-Center Toggle Clamp</option>
-      <option value="showcase">Mechanism Gallery</option>
+      <option value="sandbox">Interaction Sandbox</option>
     </select>
     <div id="fpsMeter" class="fps-badge">60 FPS</div>
   </div>
@@ -636,7 +623,7 @@
 <main class="workspace">
   <canvas id="maincanvas"></canvas>
   <div class="overlay-hints">
-    Left-drag: Move or Drag-to-connect &bull; Drag Empty Space: Pan &bull; Right-click / Long-press: Radial Menu &bull; Space: Play/Pause &bull; Wheel: Zoom
+    Left-drag: Move or Drag-to-connect &bull; Drag Empty Space: Pan &bull; Right-click / Long-press: Element Menu &bull; Space: Play/Pause &bull; Wheel: Zoom
   </div>
 </main>
 
@@ -662,18 +649,9 @@
     <span id="frameInfo" class="frame-info">Frame: 1 / 1</span>
     <div id="loopBadge" class="badge" style="display:none; background:#ecfdf5; color:#047857; font-size:0.72rem; font-weight:600; padding:2px 8px; border-radius:9999px; border:1px solid #a7f3d0; white-space:nowrap;" title="Periodic loop detected: simulation is running from precomputed frame buffer">Loop Cached</div>
   </div>
-
-  <div class="options-bar">
-    <label title="Simplify all ground pins to sleek points globally"><input type="checkbox" id="toggleHidePins"> Clean Pins</label>
-    <label title="Detect periodic cycles and play from frame cache without physics solving"><input type="checkbox" id="toggleLoopCache" checked> Loop</label>
-    <label title="Toggle vertical gravity"><input type="checkbox" id="toggleGravity"> Gravity</label>
-    <label title="Visualize tensile/compressive stress"><input type="checkbox" id="toggleStress" checked> Stress</label>
-    <label title="Render motion path curves"><input type="checkbox" id="toggleTraces" checked> Traces</label>
-    <label title="Show dimensions & angles"><input type="checkbox" id="toggleDimensions"> Dims</label>
-    <label title="Show dynamic velocity arrows"><input type="checkbox" id="toggleVelocities"> Vel</label>
-  </div>
 </div>
 
+<div id="hoverTip"></div>
 <div id="radialMenu"></div>
 <div id="contextMenu"></div>
 

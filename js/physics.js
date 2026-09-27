@@ -279,6 +279,9 @@
       damping: options.damping !== undefined ? options.damping : 0.05,
       width: options.width || 14,
       color: options.color || '#10b981',
+      solidLength: (options.solidLength !== undefined && options.solidLength !== null)
+        ? options.solidLength
+        : Math.max(4, restLength * 0.35),
       currentLength: restLength,
       force: 0
     };
@@ -444,12 +447,19 @@
     var ax = this.x[aNode], ay = this.y[aNode];
     var bx = this.x[bNode], by = this.y[bNode];
     var railLen = Math2D.dist(ax, ay, bx, by);
+    var minVal = (minT !== undefined && minT !== null && isFinite(minT)) ? Math.max(0, Math.min(railLen, minT)) : undefined;
+    var maxVal = (maxT !== undefined && maxT !== null && isFinite(maxT)) ? Math.max(0, Math.min(railLen, maxT)) : undefined;
+    if (minVal !== undefined && maxVal !== undefined && minVal > maxVal) {
+      var swap = minVal;
+      minVal = maxVal;
+      maxVal = swap;
+    }
     var slider = {
       node: node,
       aNode: aNode,
       bNode: bNode,
-      minT: (minT !== undefined && minT !== null && isFinite(minT)) ? minT : undefined,
-      maxT: (maxT !== undefined && maxT !== null && isFinite(maxT)) ? maxT : undefined,
+      minT: minVal,
+      maxT: maxVal,
       railLength: railLen,
       friction: (options.friction !== undefined) ? options.friction : 0
     };
@@ -482,7 +492,8 @@
     options = options || {};
     var r = Math2D.dist(this.x[centerNode], this.y[centerNode], this.x[crankNode], this.y[crankNode]);
     var angle = Math.atan2(this.y[crankNode] - this.y[centerNode], this.x[crankNode] - this.x[centerNode]);
-    var maxTorque = (options.maxTorque !== undefined) ? options.maxTorque : (options.torque !== undefined ? options.torque : Infinity);
+    var rawTorque = (options.maxTorque !== undefined) ? options.maxTorque : options.torque;
+    var maxTorque = (rawTorque === undefined || rawTorque === null || !isFinite(rawTorque)) ? Infinity : rawTorque;
     var motor = {
       centerNode: centerNode,
       crankNode: crankNode,
@@ -968,6 +979,22 @@
             this.y[sb] -= wSb * sCorrY;
           }
           spr.force = Math.abs(sDeltaC) * spr.stiffness;
+
+          // Solid-height limit: a real coil spring cannot compress through itself.
+          var minL = spr.solidLength;
+          if (minL > 0 && sDist < minL) {
+            var uxs = sdx / sDist;
+            var uys = sdy / sDist;
+            var push = minL - sDist;
+            if (wSa > 0) {
+              this.x[sa] -= (wSa / wSumS) * push * uxs;
+              this.y[sa] -= (wSa / wSumS) * push * uys;
+            }
+            if (wSb > 0) {
+              this.x[sb] += (wSb / wSumS) * push * uxs;
+              this.y[sb] += (wSb / wSumS) * push * uys;
+            }
+          }
         }
 
         // Physical Cam-Follower Contact Non-Penetration Constraint

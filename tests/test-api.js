@@ -711,4 +711,41 @@ console.log('Running Linksim Programmatic API & Materials Test Suite...');
   console.log('PASS: Moving targets connection point attachment');
 }
 
+// Motor selection via the motion-arrow ring and motor deletion
+{
+  const mockCanvas = {
+    getContext: () => ({ clearRect() {}, save() {}, restore() {}, translate() {}, scale() {}, beginPath() {}, arc() {}, fill() {}, stroke() {}, moveTo() {}, lineTo() {}, closePath() {}, rect() {}, fillRect() {}, strokeRect() {}, setLineDash() {}, fillText() {}, measureText: () => ({ width: 10 }), roundRect() {} }),
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }),
+    width: 800,
+    height: 600,
+    addEventListener() {},
+    style: {}
+  };
+  const editor = new MechanismEditor(mockCanvas);
+  editor.zoom = 1.0;
+
+  const center = editor.addNode(0, 0, true);
+  const crank = editor.addNode(30, 0, false);
+  editor.addMotor(center, crank, 3.0);
+  assert.strictEqual(editor.motors.length, 1, 'motor should be added');
+
+  // The motion-arrow ring is drawn at radius max(18, r*0.7) = 21 for r=30
+  const onRing = editor.findElementNear(0, 21);
+  assert(onRing && onRing.type === 'motor', 'Clicking the motion-arrow ring should select the motor');
+
+  // The center node still wins at the pivot itself
+  const atCenter = editor.findElementNear(0, 0);
+  assert(atCenter && atCenter.type === 'node', 'Clicking the pivot should still select the node');
+
+  const hover = editor.findMotorNear(0, 21);
+  assert.strictEqual(hover, 0, 'findMotorNear should detect the motor ring');
+
+  editor.selection = { type: 'motor', index: 0, item: editor.motors[0] };
+  editor.deleteSelection();
+  assert.strictEqual(editor.motors.length, 0, 'deleteSelection should remove the motor');
+  assert.strictEqual(editor.selection, null, 'selection should clear after delete');
+
+  console.log('PASS: Motor selection via motion-arrow ring and motor deletion');
+}
+
 console.log('All API & Material tests passed successfully!');

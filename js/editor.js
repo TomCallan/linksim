@@ -118,6 +118,23 @@
     }
   };
 
+  MechanismEditor.prototype.findSnapNode = function(wx, wy, excludeId) {
+    var threshold = 14 / this.zoom;
+    var threshSq = threshold * threshold;
+    var bestId = -1;
+    var bestDistSq = Infinity;
+    for (var i = 0; i < this.nodes.length; i++) {
+      var n = this.nodes[i];
+      if (n.id === excludeId) continue;
+      var dSq = Math2D.distSq(wx, wy, n.x, n.y);
+      if (dSq < threshSq && dSq < bestDistSq) {
+        bestDistSq = dSq;
+        bestId = n.id;
+      }
+    }
+    return bestId;
+  };
+
   MechanismEditor.prototype.findNodeNear = function(wx, wy, threshold) {
     threshold = (threshold || 16) / this.zoom;
     var threshSq = threshold * threshold;
@@ -270,9 +287,27 @@
     return -1;
   };
 
+  MechanismEditor.prototype.findMotorNear = function(wx, wy) {
+    var ringTol = 10 / this.zoom;
+    for (var i = this.motors.length - 1; i >= 0; i--) {
+      var mot = this.motors[i];
+      var cNode = this.getNodeById(mot.centerNode);
+      if (!cNode) continue;
+      var crNode = this.getNodeById(mot.crankNode);
+      var rDist = crNode ? Math2D.dist(cNode.x, cNode.y, crNode.x, crNode.y) : 0;
+      var arrowR = Math.max(18, rDist * 0.7);
+      var d = Math2D.dist(wx, wy, cNode.x, cNode.y);
+      if (Math.abs(d - arrowR) <= ringTol) return i;
+    }
+    return -1;
+  };
+
   MechanismEditor.prototype.findElementNear = function(wx, wy) {
     var nId = this.findNodeNear(wx, wy);
     if (nId !== -1) return { type: 'node', index: nId, id: nId, item: this.getNodeById(nId) };
+
+    var motIdx = this.findMotorNear(wx, wy);
+    if (motIdx !== -1) return { type: 'motor', index: motIdx, item: this.motors[motIdx] };
 
     var camIdx = this.findCamNear(wx, wy);
     if (camIdx !== -1) return { type: 'cam', index: camIdx, item: this.cams[camIdx] };
@@ -313,6 +348,7 @@
     this.isConnecting = false;
     this.isConnectingSpring = false;
     this.connectStartNode = -1;
+    this._beltStartPulley = undefined;
     this.render();
   };
 
@@ -815,8 +851,21 @@
       this.saveState();
       this.genevas.splice(idx, 1);
       this._notifyChange();
+    } else if (type === 'motor') {
+      this.deleteMotor(idx);
     }
     this.selection = null;
+  };
+
+  MechanismEditor.prototype.deleteMotor = function(idx) {
+    if (idx >= 0 && idx < this.motors.length) {
+      this.saveState();
+      this.motors.splice(idx, 1);
+      if (this.selection && this.selection.type === 'motor' && this.selection.index === idx) {
+        this.selection = null;
+      }
+      this._notifyChange();
+    }
   };
 
   MechanismEditor.prototype.clear = function() {
@@ -1203,6 +1252,13 @@
             self.addSlider(sNode, self._sliderRailStart, elem.index);
             self._sliderRailStart = null;
           }
+        } else if (self.activeTool === 'add_belt' && elem.type === 'pulley') {
+          if (self._beltStartPulley === undefined || self._beltStartPulley === null) {
+            self._beltStartPulley = elem.index;
+          } else if (self._beltStartPulley !== elem.index) {
+            self.addBelt(self._beltStartPulley, elem.index, { crossed: !!e.shiftKey });
+            self._beltStartPulley = undefined;
+          }
         }
         self.render();
         return;
@@ -1284,6 +1340,11 @@
         if (labelText !== null && labelText.trim() !== '') {
           self.addLabel(w.x, w.y, labelText.trim());
         }
+        self.render();
+        return;
+      }
+      if (self.activeTool === 'add_belt') {
+        self._beltStartPulley = undefined;
         self.render();
         return;
       }
@@ -1379,8 +1440,15 @@
               node.y = Math.round(w.y);
             }
           } else {
-            node.x = Math.round(w.x);
-            node.y = Math.round(w.y);
+            var snapId = self.findSnapNode(w.x, w.y, node.id);
+            if (snapId !== -1) {
+              var snapN = self.getNodeById(snapId);
+              node.x = Math.round(snapN.x);
+              node.y = Math.round(snapN.y);
+            } else {
+              node.x = Math.round(w.x);
+              node.y = Math.round(w.y);
+            }
           }
 
           // Update lengths of connected rods
@@ -1586,9 +1654,12 @@
       var nearCam = self.findCamNear(w.x, w.y);
       var nearPulley = self.findPulleyNear(w.x, w.y);
       var nearGeneva = self.findGenevaNear(w.x, w.y);
+      var nearMotor = self.findMotorNear(w.x, w.y);
 
       if (nearNode !== -1 && self.onConfigureElement) {
         self.onConfigureElement('node', self.getNodeById(nearNode));
+      } else if (nearMotor !== -1 && self.onConfigureElement) {
+        self.onConfigureElement('motor', { index: nearMotor, motor: self.motors[nearMotor] });
       } else if (nearSlider !== -1 && self.onConfigureElement) {
         self.onConfigureElement('slider', { index: nearSlider, slider: self.sliders[nearSlider] });
       } else if (nearGear !== -1 && self.onConfigureElement) {
@@ -1646,7 +1717,7 @@
       for (var i = 0; i < simPhysics.numNodes; i++) {
         nodePositions[i] = { x: simPhysics.x[i], y: simPhysics.y[i] };
       }
-      this.renderer.drawTracePaths(ctx);
+      this.renderer.drawTracePaths(ctx, this.trackedNodes);
     } else {
       for (var i = 0; i < this.nodes.length; i++) {
         nodePositions[this.nodes[i].id] = { x: this.nodes[i].x, y: this.nodes[i].y };
@@ -1809,7 +1880,7 @@
       var pb = nodePositions[rod.b];
       if (pa && pb) {
         var stress = (simPhysics && this.mode === 'simulate') ? rod.stress : 0;
-        this.renderer.drawCapsuleLink(ctx, pa.x, pa.y, pb.x, pb.y, rod.width, stress, rod.color);
+        this.renderer.drawCapsuleLink(ctx, pa.x, pa.y, pb.x, pb.y, rod.width, stress, rod.color, rod.showStress);
         if (rod.angleLock && rod.angleLock !== 'none') {
           var mx = (pa.x + pb.x) / 2;
           var my = (pa.y + pb.y) / 2;
@@ -1827,7 +1898,7 @@
           var lkText = rod.angleLock === 'horizontal' ? 'H' : (rod.angleLock === 'vertical' ? 'V' : 'A');
           ctx.fillText(lkText, mx, my);
         }
-        if (this.renderer.showDimensions) {
+        if ((rod.showDimensions !== undefined) ? rod.showDimensions : this.renderer.showDimensions) {
           this.renderer.drawDimensionLabel(ctx, pa.x, pa.y, pb.x, pb.y, rod.length);
         }
       }
@@ -1907,13 +1978,21 @@
     }
 
     // 7. Dynamic velocity vectors in simulate mode
-    if (this.renderer.showVelocities && simPhysics && this.mode === 'simulate') {
-      for (var i = 0; i < nodes.length; i++) {
-        var n = nodes[i];
-        var pos = nodePositions[n.id];
-        var isFixed = simPhysics.isFixed[n.id];
-        if (!isFixed && pos) {
-          this.renderer.drawVelocityVector(ctx, pos.x, pos.y, simPhysics.vx[n.id], simPhysics.vy[n.id]);
+    if (simPhysics && this.mode === 'simulate') {
+      var anyNodeVel = this.renderer.showVelocities;
+      if (!anyNodeVel) {
+        for (var nv = 0; nv < nodes.length; nv++) {
+          if (nodes[nv].showVelocity) { anyNodeVel = true; break; }
+        }
+      }
+      if (anyNodeVel) {
+        for (var i = 0; i < nodes.length; i++) {
+          var n = nodes[i];
+          var pos = nodePositions[n.id];
+          var isFixed = simPhysics.isFixed[n.id];
+          if (!isFixed && pos && (this.renderer.showVelocities || n.showVelocity)) {
+            this.renderer.drawVelocityVector(ctx, pos.x, pos.y, simPhysics.vx[n.id], simPhysics.vy[n.id]);
+          }
         }
       }
     }
@@ -2085,6 +2164,21 @@
             ctx.stroke();
           }
         }
+      } else if (sel.type === 'motor') {
+        var smot = this.motors[sel.index];
+        if (smot) {
+          var smc = nodePositions[smot.centerNode];
+          var smk = nodePositions[smot.crankNode];
+          if (smc) {
+            var smr = Math.max(18, smk ? Math2D.dist(smc.x, smc.y, smk.x, smk.y) * 0.7 : 18);
+            ctx.beginPath();
+            ctx.arc(smc.x, smc.y, smr + 6, 0, Math.PI * 2);
+            ctx.strokeStyle = '#f59e0b';
+            ctx.lineWidth = 3;
+            ctx.setLineDash([6, 4]);
+            ctx.stroke();
+          }
+        }
       }
       ctx.restore();
     }
@@ -2211,553 +2305,354 @@
     ctx.restore();
   };
 
-  // Full suite of 14 recreated, clean mechanical presets
   MechanismEditor.Presets = {
-  // 1. Grashof Four-Bar Crank-Rocker Linkage
-  fourbar: {
-    version: '2.0',
-    nodes: [
-      { id: 0, x: 80,  y: 160, fixed: true, mass: 1 },    // Ground pivot A (Crank)
-      { id: 1, x: 120, y: 160, fixed: false, mass: 1 },   // Crank pin (Radius 40)
-      { id: 2, x: 280, y: 160, fixed: true, mass: 1 },    // Ground pivot B (Rocker)
-      { id: 3, x: 267.5, y: 10.5, fixed: false, mass: 1 } // Coupler / Rocker joint
-    ],
-    rods: [
-      { a: 0, b: 1, length: 40, width: 11, color: '#f59e0b' },  // Crank (motor driven)
-      { a: 1, b: 3, length: 210, width: 9, color: '#3b82f6' },  // Coupler rod
-      { a: 2, b: 3, length: 150, width: 10, color: '#10b981' }  // Oscillating rocker
-    ],
-    sliders: [],
-    gears: [],
-    motors: [
-      { centerNode: 0, crankNode: 1, speed: 4.0 }
-    ],
-    brackets: [],
-    labels: [
-      { x: 40,  y: 195, text: 'Motor Crank (4 rad/s)', fontSize: 13, color: '#b45309', bold: true },
-      { x: 160, y: 70,  text: 'Coupler Rod (L = 210 mm)', fontSize: 12, color: '#1d4ed8', bold: true },
-      { x: 250, y: 195, text: 'Oscillating Rocker Pivot', fontSize: 13, color: '#047857', bold: true },
-      { x: 90,  y: -25, text: 'Grashof Four-Bar Crank-Rocker Linkage', fontSize: 15, color: '#1e293b', bold: true }
-    ]
-  },
+    sandbox: (function() {
+      var model = {
+        version: '2.0',
+        nodes: [],
+        rods: [],
+        springs: [],
+        sliders: [],
+        gears: [],
+        motors: [],
+        brackets: [],
+        genevas: [],
+        pulleys: [],
+        belts: [],
+        axles: [],
+        cams: [],
+        camContacts: [],
+        labels: []
+      };
 
-  // 2. In-Line Slider-Crank (Piston Engine / Compressor)
-  sliderCrank: {
-    version: '2.0',
-    nodes: [
-      { id: 0, x: -100, y: 0, fixed: true, mass: 1 },   // Crankshaft main journal
-      { id: 1, x: -60,  y: 0, fixed: false, mass: 1 },  // Crankpin (Radius 40)
-      { id: 2, x: 70,   y: 0, fixed: false, mass: 2 },  // Crosshead / Piston pin
-      { id: 3, x: -40,  y: 0, fixed: true, mass: 1 },   // Cylinder guide start
-      { id: 4, x: 180,  y: 0, fixed: true, mass: 1 }    // Cylinder guide end
-    ],
-    rods: [
-      { a: 0, b: 1, length: 40, width: 14, color: '#f59e0b' },  // Crank throw
-      { a: 1, b: 2, length: 130, width: 11, color: '#3b82f6' }  // Connecting rod
-    ],
-    sliders: [
-      { node: 2, aNode: 3, bNode: 4 }
-    ],
-    gears: [],
-    motors: [
-      { centerNode: 0, crankNode: 1, speed: 4.5 }
-    ],
-    brackets: [],
-    labels: [
-      { x: -180, y: -45, text: 'Crankshaft Bearing', fontSize: 13, color: '#b45309', bold: true },
-      { x: -20,  y: -30, text: 'Connecting Rod', fontSize: 12, color: '#1d4ed8', bold: true },
-      { x: 80,   y: -45, text: 'Reciprocating Piston', fontSize: 13, color: '#047857', bold: true },
-      { x: -80,  y: 75,  text: 'In-Line Slider-Crank Engine (Stroke: 90 mm)', fontSize: 15, color: '#1e293b', bold: true }
-    ]
-  },
-
-  // 3. Chebyshev Straight-Line Linkage (Cognate Linear Motion Without Rails)
-  chebyshev: {
-    version: '2.0',
-    nodes: [
-      { id: 0, x: -40, y: 0, fixed: true, mass: 1 },     // Ground pivot A
-      { id: 1, x: 40,  y: 0, fixed: true, mass: 1 },     // Ground pivot B
-      { id: 2, x: -40, y: 100, fixed: false, mass: 1 },   // Left arm end
-      { id: 3, x: 40,  y: 100, fixed: false, mass: 1 },   // Right arm end
-      { id: 4, x: 0,   y: 100, fixed: false, mass: 1 }    // Coupler midpoint (linear tracer)
-    ],
-    rods: [
-      { a: 0, b: 2, length: 100, width: 10, color: '#f59e0b' },
-      { a: 1, b: 3, length: 100, width: 10, color: '#10b981' },
-      { a: 2, b: 3, length: 80,  width: 9,  color: '#3b82f6' },
-      { a: 2, b: 4, length: 40,  width: 7,  color: '#6366f1' },
-      { a: 3, b: 4, length: 40,  width: 7,  color: '#6366f1' }
-    ],
-    sliders: [],
-    gears: [],
-    motors: [
-      { centerNode: 0, crankNode: 2, speed: 2.5 }
-    ],
-    brackets: [],
-    labels: [
-      { x: -100, y: -30, text: 'Fixed Base (d = 80 mm)', fontSize: 13, color: '#64748b', bold: true },
-      { x: -45,  y: 135, text: 'Coupler Midpoint (Near-Zero Deviation Line)', fontSize: 13, color: '#4338ca', bold: true },
-      { x: -95,  y: 165, text: 'Chebyshev Straight-Line Mechanism', fontSize: 15, color: '#1e293b', bold: true }
-    ]
-  },
-
-  // 4. Klann Mechanical Walking Leg
-  klann: {
-    version: '2.0',
-    nodes: [
-      { id: 0, x: 0,   y: 0,    fixed: true, mass: 1 },    // Crank pivot
-      { id: 1, x: -7,  y: 13,   fixed: false, mass: 1 },   // Crank pin
-      { id: 2, x: -60, y: 30,   fixed: false, mass: 1 },   // Upper rocker node
-      { id: 3, x: -30, y: -50,  fixed: false, mass: 1 },   // Lower rocker node
-      { id: 4, x: -38, y: -7.8, fixed: true, mass: 1 },    // Frame pivot B
-      { id: 5, x: -85, y: -20,  fixed: false, mass: 1 },   // Knee / elbow
-      { id: 6, x: -70, y: -65,  fixed: false, mass: 1 },   // Lower link joint
-      { id: 7, x: 0,   y: -100, fixed: false, mass: 1 }    // Walking foot
-    ],
-    rods: [
-      { a: 0, b: 1, length: 15.0, width: 8, color: '#f59e0b' },
-      { a: 1, b: 2, length: 50.0, width: 9, color: '#3b82f6' },
-      { a: 1, b: 3, length: 61.9, width: 9, color: '#3b82f6' },
-      { a: 2, b: 4, length: 41.5, width: 9, color: '#64748b' },
-      { a: 3, b: 4, length: 39.3, width: 9, color: '#64748b' },
-      { a: 4, b: 5, length: 40.1, width: 9, color: '#3b82f6' },
-      { a: 2, b: 5, length: 55.8, width: 9, color: '#3b82f6' },
-      { a: 3, b: 6, length: 36.7, width: 9, color: '#3b82f6' },
-      { a: 5, b: 6, length: 39.4, width: 9, color: '#3b82f6' },
-      { a: 3, b: 7, length: 49.0, width: 9, color: '#10b981' },
-      { a: 6, b: 7, length: 65.7, width: 9, color: '#10b981' }
-    ],
-    sliders: [],
-    gears: [],
-    motors: [
-      { centerNode: 0, crankNode: 1, speed: 3.0 }
-    ],
-    brackets: [],
-    labels: [
-      { x: -35, y: 35,   text: 'Continuous Rotary Crank', fontSize: 13, color: '#b45309', bold: true },
-      { x: -95, y: 10,   text: 'Coupler & Dual Rockers', fontSize: 12, color: '#1d4ed8', bold: true },
-      { x: 15,  y: -100, text: 'Flat Stance & Swing Walking Curve', fontSize: 13, color: '#047857', bold: true },
-      { x: -80, y: 70,   text: 'Klann Mechanical Walking Leg Mechanism', fontSize: 15, color: '#1e293b', bold: true }
-    ]
-  },
-
-  // 5. Theo Jansen Strandbeest Kinetic Leg Linkage
-  jansen: {
-    version: '2.0',
-    nodes: [
-      { id: 0, x: 0,   y: 0,    fixed: true, mass: 1 },    // Crank pivot
-      { id: 1, x: 15,  y: 0,    fixed: false, mass: 1 },   // Crank pin (m = 15)
-      { id: 2, x: -38, y: -7.8, fixed: true, mass: 1 },    // Fixed frame pivot
-      { id: 3, x: -7,  y: 13,   fixed: false, mass: 1 },   // Upper joint
-      { id: 4, x: -60, y: 30,   fixed: false, mass: 1 },   // Outer hip
-      { id: 5, x: -30, y: -50,  fixed: false, mass: 1 },   // Knee
-      { id: 6, x: -85, y: -20,  fixed: false, mass: 1 },   // Thigh joint
-      { id: 7, x: -70, y: -65,  fixed: false, mass: 1 },   // Shin joint
-      { id: 8, x: 0,   y: -100, fixed: false, mass: 1 }    // Foot
-    ],
-    rods: [
-      { a: 0, b: 1, length: 15.0, width: 8, color: '#f59e0b' },
-      { a: 1, b: 4, length: 50.0, width: 9, color: '#3b82f6' },
-      { a: 1, b: 5, length: 61.9, width: 9, color: '#3b82f6' },
-      { a: 4, b: 2, length: 41.5, width: 9, color: '#64748b' },
-      { a: 5, b: 2, length: 39.3, width: 9, color: '#64748b' },
-      { a: 2, b: 6, length: 40.1, width: 9, color: '#3b82f6' },
-      { a: 4, b: 6, length: 55.8, width: 9, color: '#3b82f6' },
-      { a: 5, b: 7, length: 36.7, width: 9, color: '#3b82f6' },
-      { a: 6, b: 7, length: 39.4, width: 9, color: '#3b82f6' },
-      { a: 5, b: 8, length: 49.0, width: 9, color: '#10b981' },
-      { a: 7, b: 8, length: 65.7, width: 9, color: '#10b981' }
-    ],
-    sliders: [],
-    gears: [],
-    motors: [
-      { centerNode: 0, crankNode: 1, speed: 3.0 }
-    ],
-    brackets: [],
-    labels: [
-      { x: -35, y: 35,   text: 'Crank Arm (m = 15)', fontSize: 13, color: '#b45309', bold: true },
-      { x: -95, y: 10,   text: '11 Holy Numbers Truss', fontSize: 12, color: '#1d4ed8', bold: true },
-      { x: 15,  y: -100, text: 'Ovoid Stepping Foot Path', fontSize: 13, color: '#047857', bold: true },
-      { x: -80, y: 70,   text: 'Theo Jansen Strandbeest Kinetic Leg', fontSize: 15, color: '#1e293b', bold: true }
-    ]
-  },
-
-  // 6. Geared Bell-Crank Transfer (Rotary to 90-Deg Reciprocating Linear Output)
-  gearedBellCrank: {
-    version: '2.0',
-    nodes: [
-      { id: 0, x: -100, y: 0, fixed: true, mass: 1 },    // Gear 1 center (Motor pinion)
-      { id: 1, x: 0,    y: 0, fixed: true, mass: 1 },    // Gear 2 center (Driven gear)
-      { id: 2, x: 0,    y: 35, fixed: false, mass: 1, parentGear: { gearIdx: 1, radius: 35, angleOffset: Math.PI / 2 } }, // Pin on Gear 2
-      { id: 3, x: 90,   y: 35, fixed: false, mass: 1 },  // Bell-crank input arm
-      { id: 4, x: 90,   y: 80, fixed: true, mass: 1 },   // Bell-crank pivot
-      { id: 5, x: 135,  y: 80, fixed: false, mass: 1 },  // Bell-crank 90-deg output arm
-      { id: 6, x: 135,  y: 160, fixed: false, mass: 1 }, // Piston
-      { id: 7, x: 135,  y: 120, fixed: true, mass: 1 },  // Slider rail top
-      { id: 8, x: 135,  y: 220, fixed: true, mass: 1 }   // Slider rail bottom
-    ],
-    rods: [
-      { a: 2, b: 3, length: 115, width: 10, color: '#3b82f6' },
-      { a: 5, b: 6, length: 80,  width: 10, color: '#10b981' }
-    ],
-    sliders: [
-      { node: 6, aNode: 7, bNode: 8, minT: 0, maxT: 150 }
-    ],
-    gears: [
-      { centerNode: 0, radius: 50, teeth: 20, meshWith: [1] },
-      { centerNode: 1, radius: 50, teeth: 20, meshWith: [0] }
-    ],
-    motors: [
-      { centerNode: 0, crankNode: 0, speed: 2.5 }
-    ],
-    brackets: [
-      { a: 3, b: 4, c: 5, width: 14, color: '#6366f1' }
-    ],
-    labels: [
-      { x: -130, y: -45, text: 'Input Drive Pinion', fontSize: 13, color: '#b45309', bold: true },
-      { x: -35,  y: -45, text: 'Driven Gear (Attached Pin)', fontSize: 13, color: '#1d4ed8', bold: true },
-      { x: 55,   y: 110, text: '90-Deg Rigid Bell-Crank', fontSize: 13, color: '#4338ca', bold: true },
-      { x: 110,  y: 245, text: 'Vertical Output Piston', fontSize: 13, color: '#047857', bold: true },
-      { x: -60,  y: -85, text: 'Geared Bell-Crank Rotary-to-Linear Transfer', fontSize: 15, color: '#1e293b', bold: true }
-    ]
-  },
-
-  // 7. Compound Gear Train (Multi-Stage Speed Reduction / Torque Multiplier)
-  gearTrain: {
-    version: '2.0',
-    nodes: [
-      { id: 0, x: -85, y: 0, fixed: true, mass: 1 },  // Input pinion center
-      { id: 1, x: 0,   y: 0, fixed: true, mass: 1 },  // Intermediate compound gear center
-      { id: 2, x: 80,  y: 0, fixed: true, mass: 1 }   // Output bull gear center
-    ],
-    rods: [],
-    sliders: [],
-    gears: [
-      { centerNode: 0, radius: 25, teeth: 12, meshWith: [1] },     // Pinion 1 (12T)
-      { centerNode: 1, radius: 60, teeth: 28, meshWith: [0, 2] },  // Bull gear 1 (28T, 2.33:1)
-      { centerNode: 2, radius: 45, teeth: 20, meshWith: [1] }      // Output gear (20T)
-    ],
-    motors: [
-      { centerNode: 0, crankNode: 0, speed: 4.0 }
-    ],
-    brackets: [],
-    labels: [
-      { x: -125, y: -45, text: 'Input Pinion (12T, 4 rad/s)', fontSize: 13, color: '#b45309', bold: true },
-      { x: -35,  y: -75, text: 'Compound Idler (28T)', fontSize: 13, color: '#1d4ed8', bold: true },
-      { x: 65,   y: -60, text: 'High-Torque Output (20T)', fontSize: 13, color: '#047857', bold: true },
-      { x: -70,  y: 85,  text: 'Multi-Stage Involute Spur Gear Train', fontSize: 15, color: '#1e293b', bold: true }
-    ]
-  },
-
-  // 8. Geneva Drive / Maltese Cross (Intermittent Rotary Indexing)
-  geneva: {
-    version: '2.0',
-    nodes: [
-      { id: 0, x: 0,  y: 0,  fixed: true, mass: 1 },  // Driver center
-      { id: 1, x: 0,  y: 55, fixed: false, mass: 1 }, // Driver pin (radius 55)
-      { id: 2, x: 60, y: 0,  fixed: true, mass: 1 }   // Geneva wheel center
-    ],
-    rods: [
-      { a: 0, b: 1, length: 55, width: 8, color: '#f59e0b' }
-    ],
-    sliders: [],
-    gears: [],
-    genevas: [
-      {
-        driverCenterNode: 0,
-        driverPinNode: 1,
-        genevaCenterNode: 2,
-        slots: 4,
-        slotWidth: 12,
-        angle: -0.7854
+      function r2(v) {
+        return Math.round(v * 100) / 100;
       }
-    ],
-    motors: [
-      { centerNode: 0, crankNode: 1, speed: 2.0 }
-    ],
-    brackets: [],
-    labels: [
-      { x: -60, y: 80,  text: 'Continuous Driver Pin', fontSize: 13, color: '#b45309', bold: true },
-      { x: 50,  y: 90,  text: '4-Slot Maltese Cross (90-Deg Index)', fontSize: 13, color: '#4338ca', bold: true },
-      { x: -10, y: -80, text: 'Geneva Drive (Intermittent Motion Indexer)', fontSize: 15, color: '#1e293b', bold: true }
-    ]
-  },
 
-  // 9. Cam & Reciprocating Valve Follower (Desmodromic / Spring Return)
-  camFollower: {
-    version: '2.0',
-    nodes: [
-      { id: 0, x: 0, y: 0,   fixed: true, mass: 1 },  // Cam center (Camshaft)
-      { id: 1, x: 0, y: 63,  fixed: false, mass: 1 }, // Roller follower node
-      { id: 2, x: 0, y: 40,  fixed: true, mass: 1 },  // Valve guide bottom
-      { id: 3, x: 0, y: 140, fixed: true, mass: 1 },  // Valve guide top
-      { id: 4, x: 0, y: 150, fixed: true, mass: 1 }   // Return spring top anchor
-    ],
-    rods: [],
-    springs: [
-      { a: 1, b: 4, restLength: 60, stiffness: 220, width: 14, color: '#10b981' }
-    ],
-    sliders: [
-      { node: 1, aNode: 2, bNode: 3 }
-    ],
-    cams: [
-      { centerNode: 0, profileType: 'pear', baseRadius: 35, lift: 28, options: {} }
-    ],
-    camContacts: [
-      { camIdx: 0, followerNode: 1, rollerRadius: 8 }
-    ],
-    gears: [],
-    motors: [
-      { centerNode: 0, crankNode: 0, speed: 2.5 }
-    ],
-    brackets: [],
-    labels: [
-      { x: -65, y: -45, text: 'Camshaft (Teardrop / Pear Cam)', fontSize: 13, color: '#b45309', bold: true },
-      { x: 25,  y: 65,  text: 'Roller Follower & Guide Rails', fontSize: 13, color: '#047857', bold: true },
-      { x: 25,  y: 120, text: 'Helical Return Spring', fontSize: 13, color: '#4338ca', bold: true },
-      { x: -80, y: 185, text: 'Desmodromic Cam & Reciprocating Valve Follower', fontSize: 15, color: '#1e293b', bold: true }
-    ]
-  },
+      function node(x, y, fixed, mass, extra) {
+        var n = { id: model.nodes.length, x: r2(x), y: r2(y), fixed: !!fixed, mass: mass || 1 };
+        if (extra) {
+          for (var k in extra) {
+            if (Object.prototype.hasOwnProperty.call(extra, k)) n[k] = extra[k];
+          }
+        }
+        model.nodes.push(n);
+        return n.id;
+      }
 
-  // 10. Stepped Pulley & Belt Drive (Open & Crossed Belts)
-  beltDrive: {
-    version: '2.0',
-    nodes: [
-      { id: 0, x: -100, y: 0, fixed: true, mass: 1 }, // Driver pulley
-      { id: 1, x: 10,   y: 0, fixed: true, mass: 1 }, // Jackshaft dual pulley
-      { id: 2, x: 120,  y: 0, fixed: true, mass: 1 }  // Driven output pulley
-    ],
-    rods: [],
-    sliders: [],
-    gears: [],
-    pulleys: [
-      { nodeId: 0, radius: 35 },
-      { nodeId: 1, radius: 22 },
-      { nodeId: 2, radius: 25 }
-    ],
-    belts: [
-      { pulleyA: 0, pulleyB: 1, crossed: false, width: 8 },
-      { pulleyA: 1, pulleyB: 2, crossed: true,  width: 7 }
-    ],
-    motors: [
-      { centerNode: 0, crankNode: 0, speed: 3.5 }
-    ],
-    brackets: [],
-    labels: [
-      { x: -125, y: -45, text: 'Drive Pulley (Motor)', fontSize: 13, color: '#b45309', bold: true },
-      { x: -35,  y: -55, text: 'Jackshaft Dual Pulleys', fontSize: 13, color: '#0369a1', bold: true },
-      { x: 85,   y: -45, text: 'Crossed Belt (Direction Reversal)', fontSize: 13, color: '#047857', bold: true },
-      { x: -60,  y: 80,  text: 'Two-Stage Stepped Belt Drive Transmission', fontSize: 15, color: '#1e293b', bold: true }
-    ]
-  },
+      function rod(a, b, style) {
+        style = style || {};
+        var na = model.nodes[a];
+        var nb = model.nodes[b];
+        var obj = {
+          a: a,
+          b: b,
+          length: r2(Math.hypot(nb.x - na.x, nb.y - na.y)),
+          width: style.width || 11,
+          color: style.color || '#3b82f6'
+        };
+        if (style.angleLock) {
+          obj.angleLock = style.angleLock;
+          obj.lockedAngle = style.lockedAngle || 0;
+        }
+        model.rods.push(obj);
+        return obj;
+      }
 
-  // 11. Interactive Shifting Gearbox (Deep Physical Interaction)
-  gearbox: {
-    version: '2.0',
-    nodes: [
-      { id: 0, x: -55, y: -50, fixed: true, mass: 1 },    // Input Shaft 1: 1st Drive Pinion
-      { id: 1, x: -75, y: 50,  fixed: true, mass: 1 },    // Input Shaft 2: 2nd Drive Gear
-      { id: 2, x: 25,  y: -110, fixed: true, mass: 1 },   // Shifter slider rail start
-      { id: 3, x: 25,  y: 110,  fixed: true, mass: 1 },   // Shifter slider rail end
-      { id: 4, x: 25,  y: -50, fixed: false, mass: 1 },   // Shifter slider carriage & Shift Gear
-      { id: 5, x: 130, y: 0,   fixed: true, mass: 1 },    // Shift Lever Fulcrum Pivot
-      { id: 6, x: 130, y: 80,  fixed: false, mass: 1, isHandle: true }, // Shift Knob (Drag to Shift)
-      { id: 7, x: 130, y: -50, fixed: false, mass: 1 }    // Shift Lever Output Linkage Arm
-    ],
-    rods: [
-      { a: 7, b: 4, length: 105, width: 9, color: '#64748b' } // Linkage rod from lever to slider
-    ],
-    springs: [],
-    sliders: [
-      { node: 4, aNode: 2, bNode: 3, minT: 25, maxT: 195 }
-    ],
-    gears: [
-      { centerNode: 0, radius: 35, teeth: 14, meshWith: [] }, // Gear 0 (1st speed drive pinion)
-      { centerNode: 1, radius: 55, teeth: 22, meshWith: [] }, // Gear 1 (2nd speed drive gear)
-      { centerNode: 4, radius: 45, teeth: 18, meshWith: [] }  // Gear 2 (Movable shifter gear on slider)
-    ],
-    pulleys: [
-      { nodeId: 0, radius: 25 },
-      { nodeId: 1, radius: 25 }
-    ],
-    belts: [
-      { pulleyA: 0, pulleyB: 1, crossed: false, width: 8 }
-    ],
-    axles: [],
-    cams: [],
-    camContacts: [],
-    motors: [
-      { centerNode: 0, crankNode: 0, speed: 3.0, maxTorque: 8000 }
-    ],
-    brackets: [
-      { a: 6, b: 5, c: 7, width: 14, color: '#6366f1' } // Rigid shift lever
-    ],
-    labels: [
-      { x: -115, y: -85, text: '1st Speed Pinion (35 mm)', fontSize: 13, color: '#b45309', bold: true },
-      { x: -135, y: 85,  text: '2nd Speed Gear (55 mm)', fontSize: 13, color: '#1d4ed8', bold: true },
-      { x: 55,   y: 110, text: 'Shift Knob (Drag up/down to shift gears)', fontSize: 13, color: '#2563eb', bold: true },
-      { x: -10,  y: -75, text: 'Sliding Cluster Gear (45 mm)', fontSize: 12, color: '#047857', bold: true },
-      { x: -80,  y: -130, text: 'Manual Transmission (Dynamic Proximity Gear Meshing)', fontSize: 15, color: '#1e293b', bold: true }
-    ]
-  },
+      function spring(a, b, rest, stiffness, extra) {
+        var obj = {
+          a: a,
+          b: b,
+          restLength: rest,
+          stiffness: stiffness,
+          damping: 2.0,
+          width: 13,
+          color: '#10b981'
+        };
+        if (extra) {
+          for (var k in extra) {
+            if (Object.prototype.hasOwnProperty.call(extra, k)) obj[k] = extra[k];
+          }
+        }
+        model.springs.push(obj);
+        return obj;
+      }
 
-  // 12. Clock Anchor Escapement (Discrete Step Ticking)
-  escapement: {
-    version: '2.0',
-    nodes: [
-      { id: 0, x: 0,   y: 0,   fixed: true, mass: 1 },  // Escape wheel center
-      { id: 1, x: 0,   y: 75,  fixed: true, mass: 1 },  // Anchor pallet pivot
-      { id: 2, x: -35, y: 40,  fixed: false, mass: 1 }, // Left entry pallet
-      { id: 3, x: 35,  y: 40,  fixed: false, mass: 1 }, // Right exit pallet
-      { id: 4, x: 0,   y: 140, fixed: false, mass: 2 }, // Pendulum bob
-      { id: 5, x: 25,  y: 0,   fixed: false, mass: 1 }  // Motor crank pin
-    ],
-    rods: [
-      { a: 1, b: 4, length: 65, width: 6, color: '#94a3b8' } // Pendulum rod
-    ],
-    brackets: [
-      { a: 2, b: 1, c: 3, width: 12, color: '#6366f1' }     // Anchor pallet bracket
-    ],
-    gears: [
-      { centerNode: 0, radius: 50, teeth: 12, profile: 'ratchet' }
-    ],
-    motors: [
-      { centerNode: 0, crankNode: 5, speed: 1.5, maxTorque: 400 }
-    ],
-    sliders: [],
-    labels: [
-      { x: -70, y: -65, text: 'Ratchet Escape Wheel (Continuous Torque)', fontSize: 13, color: '#b45309', bold: true },
-      { x: -40, y: 95,  text: 'Rocking Anchor Pallets', fontSize: 13, color: '#4338ca', bold: true },
-      { x: -20, y: 165, text: 'Harmonic Pendulum', fontSize: 13, color: '#047857', bold: true },
-      { x: -80, y: -95, text: 'Deadbeat Clock Escapement (Discrete Step Ticking)', fontSize: 15, color: '#1e293b', bold: true }
-    ]
-  },
+      function slider(n, a, b, minT, maxT, friction) {
+        var obj = { node: n, aNode: a, bNode: b };
+        if (minT !== undefined && minT !== null) obj.minT = minT;
+        if (maxT !== undefined && maxT !== null) obj.maxT = maxT;
+        if (friction) obj.friction = friction;
+        model.sliders.push(obj);
+        return obj;
+      }
 
-  // 13. Over-Center Toggle Clamp (Deep Physical Interaction & Bistable Snap)
-  overcenter: {
-    version: '2.0',
-    nodes: [
-      { id: 0, x: -80, y: 0,   fixed: true, mass: 1 },  // Handle base pivot
-      { id: 1, x: 0,   y: -25, fixed: false, mass: 1 }, // Toggle knee joint
-      { id: 2, x: 75,  y: 0,   fixed: false, mass: 1 }, // Output clamp head
-      { id: 3, x: 20,  y: 0,   fixed: true, mass: 1 },  // Clamp guide rail start
-      { id: 4, x: 180, y: 0,   fixed: true, mass: 1 },  // Clamp guide rail end
-      { id: 5, x: 0,   y: 15,  fixed: true, mass: 1 },  // Mechanical stop pin
-      { id: 6, x: 0,   y: -85, fixed: true, mass: 1 }   // Bistable return spring anchor
-    ],
-    rods: [
-      { a: 0, b: 1, length: 83.8, width: 12, color: '#f59e0b' }, // Handle lever arm
-      { a: 1, b: 2, length: 79.1, width: 12, color: '#3b82f6' }  // Clamp toggle link
-    ],
-    springs: [
-      { a: 1, b: 6, restLength: 50, stiffness: 100, width: 12, color: '#10b981' }
-    ],
-    sliders: [
-      { node: 2, aNode: 3, bNode: 4, minT: 0, maxT: 150 }
-    ],
-    gears: [],
-    motors: [],
-    brackets: [],
-    labels: [
-      { x: -110, y: -30, text: 'Handle Base Pivot', fontSize: 13, color: '#64748b', bold: true },
-      { x: -30,  y: -50, text: 'Toggle Knee (Drag across center line to snap lock)', fontSize: 13, color: '#2563eb', bold: true },
-      { x: 60,   y: -30, text: 'Workpiece Clamp Piston', fontSize: 13, color: '#047857', bold: true },
-      { x: -90,  y: 60,  text: 'Over-Center Toggle Clamp (Bistable Mechanical Latch)', fontSize: 15, color: '#1e293b', bold: true }
-    ]
-  },
+      function gear(center, radius, teeth, meshWith) {
+        model.gears.push({ centerNode: center, radius: radius, teeth: teeth, meshWith: meshWith || [] });
+        return model.gears.length - 1;
+      }
 
-  // 14. Mechanism Showcase Gallery (6 Independent Multi-Disciplinary Stations)
-  showcase: {
-    version: '2.0',
-    nodes: [
-      // Station 1: Slider-Crank Piston Engine (Top-Left)
-      { id: 0, x: -240, y: -120, fixed: true, mass: 1 },
-      { id: 1, x: -240, y: -165, fixed: false, mass: 1 },
-      { id: 2, x: -130, y: -120, fixed: false, mass: 2 },
-      { id: 3, x: -60,  y: -120, fixed: true, mass: 1 },
-      { id: 4, x: -300, y: -120, fixed: true, mass: 1 },
+      function motor(center, crank, speed, extra) {
+        var obj = { centerNode: center, crankNode: crank, speed: speed };
+        if (extra) {
+          for (var k in extra) {
+            if (Object.prototype.hasOwnProperty.call(extra, k)) obj[k] = extra[k];
+          }
+        }
+        model.motors.push(obj);
+        return obj;
+      }
 
-      // Station 2: Dual-Ratio Gear Train (Top-Center)
-      { id: 5, x: 0,   y: -120, fixed: true, mass: 1 },
-      { id: 6, x: 65,  y: -120, fixed: true, mass: 1 },
-      { id: 7, x: 135, y: -120, fixed: true, mass: 1 },
+      function cam(center, profile, baseR, lift, angle) {
+        model.cams.push({
+          centerNode: center,
+          profileType: profile,
+          baseRadius: baseR,
+          lift: lift,
+          options: { initialAngle: angle || 0 }
+        });
+        return model.cams.length - 1;
+      }
 
-      // Station 3: Cam & Spring Follower Valve (Top-Right)
-      { id: 8,  x: 280, y: -120, fixed: true, mass: 1 },
-      { id: 9,  x: 280, y: -65,  fixed: false, mass: 1 },
-      { id: 10, x: 280, y: -90,  fixed: true, mass: 1 },
-      { id: 11, x: 280, y: -30,  fixed: true, mass: 1 },
-      { id: 12, x: 280, y: 0,    fixed: true, mass: 1 },
+      function camContact(camIdx, follower, rollerR) {
+        model.camContacts.push({ camIdx: camIdx, followerNode: follower, rollerRadius: rollerR });
+      }
 
-      // Station 4: Spring-Mass Harmonic Oscillator (Bottom-Left)
-      { id: 13, x: -240, y: 40,  fixed: true, mass: 1 },
-      { id: 14, x: -240, y: 130, fixed: false, mass: 3 },
+      function pulley(nodeId, radius, width) {
+        model.pulleys.push({ nodeId: nodeId, radius: radius, width: width || 8 });
+        return model.pulleys.length - 1;
+      }
 
-      // Station 5: Pulley & Belt Transmission (Bottom-Center)
-      { id: 15, x: 10,  y: 75, fixed: true, mass: 1 },
-      { id: 16, x: 120, y: 75, fixed: true, mass: 1 },
+      function belt(a, b, crossed) {
+        model.belts.push({ pulleyA: a, pulleyB: b, crossed: !!crossed, width: 7 });
+      }
 
-      // Station 6: Grashof Four-Bar Linkage (Bottom-Right)
-      { id: 17, x: 230, y: 75, fixed: true, mass: 1 },
-      { id: 18, x: 230, y: 30, fixed: false, mass: 1 },
-      { id: 19, x: 320, y: 5,  fixed: false, mass: 1 },
-      { id: 20, x: 360, y: 75, fixed: true, mass: 1 }
-    ],
-    rods: [
-      // Slider-Crank
-      { a: 0, b: 1, length: 45, width: 9, color: '#f59e0b' },
-      { a: 1, b: 2, length: 120, width: 8, color: '#64748b' },
-      // Four-Bar Linkage
-      { a: 17, b: 18, length: 45, width: 9, color: '#f59e0b' },
-      { a: 18, b: 19, length: 95, width: 8, color: '#64748b' },
-      { a: 19, b: 20, length: 80, width: 9, color: '#10b981' }
-    ],
-    springs: [
-      { a: 13, b: 14, restLength: 60, stiffness: 120, width: 14, color: '#10b981' },
-      { a: 9,  b: 12, restLength: 35, stiffness: 250, width: 10, color: '#6366f1' }
-    ],
-    sliders: [
-      { node: 2, aNode: 3, bNode: 4 },
-      { node: 9, aNode: 10, bNode: 11 }
-    ],
-    gears: [
-      { centerNode: 5, radius: 28, teeth: 12, meshWith: [1] },
-      { centerNode: 6, radius: 42, teeth: 18, meshWith: [0, 2] },
-      { centerNode: 7, radius: 28, teeth: 12, meshWith: [1] }
-    ],
-    pulleys: [
-      { nodeId: 15, radius: 28 },
-      { nodeId: 16, radius: 18 }
-    ],
-    belts: [
-      { pulleyA: 0, pulleyB: 1, crossed: false, width: 7 }
-    ],
-    axles: [],
-    genevas: [],
-    cams: [
-      { centerNode: 8, profileType: 'pear', baseRadius: 30, lift: 25, options: {} }
-    ],
-    camContacts: [
-      { camIdx: 0, followerNode: 9, rollerRadius: 8 }
-    ],
-    motors: [
-      { centerNode: 0,  crankNode: 1,  speed: 2.5 },
-      { centerNode: 5,  crankNode: 5,  speed: 2.0 },
-      { centerNode: 8,  crankNode: 8,  speed: 1.8 },
-      { centerNode: 15, crankNode: 15, speed: 3.0 },
-      { centerNode: 17, crankNode: 18, speed: 1.5 }
-    ],
-    brackets: [],
-    labels: [
-      { x: -300, y: -210, text: 'Slider-Crank Piston Engine', fontSize: 13, color: '#b45309', bold: true },
-      { x: -50,  y: -210, text: 'Compound Gear Train', fontSize: 13, color: '#1d4ed8', bold: true },
-      { x: 220,  y: -210, text: 'Cam & Follower Valve', fontSize: 13, color: '#6d28d9', bold: true },
-      { x: -300, y: 0,    text: 'Spring-Mass Oscillator', fontSize: 13, color: '#047857', bold: true },
-      { x: -50,  y: 0,    text: 'Belt & Pulley Drive', fontSize: 13, color: '#0369a1', bold: true },
-      { x: 180,  y: 0,    text: 'Four-Bar Linkage', fontSize: 13, color: '#b45309', bold: true }
-    ]
-  }
-};
+      function label(x, y, text, size, color, bold) {
+        model.labels.push({
+          x: r2(x),
+          y: r2(y),
+          text: text,
+          fontSize: size || 12,
+          color: color || '#1e293b',
+          bold: !!bold
+        });
+      }
+
+      var COL = [-540, -180, 180, 540];
+      var ROW = [-320, 0, 320];
+
+      label(COL[0] - 150, ROW[0] - 195, 'LINKSIM INTERACTION SANDBOX', 20, '#0f172a', true);
+      label(COL[0] - 150, ROW[0] - 170, 'Press Play, then drag dark joint nodes, pink knobs, and free beam ends. Drag a gear rim to turn it by hand.', 12, '#475569');
+      label(COL[0] - 150, ROW[0] - 152, 'Zoom with the wheel. Each station is independent. Watch the label to know the expected result.', 12, '#475569');
+
+      // 1. Four-bar crank-rocker
+      (function() {
+        var x = COL[0], y = ROW[0];
+        var a = node(x - 50, y + 20, true);
+        var k = node(x - 20, y + 20, false);
+        var b = node(x + 50, y + 20, true);
+        var d = node(x + 38, y - 49, false);
+        rod(a, b, { width: 7, color: '#94a3b8' });
+        rod(a, k, { width: 11, color: '#f59e0b' });
+        rod(k, d, { width: 9, color: '#3b82f6' });
+        rod(b, d, { width: 11, color: '#10b981' });
+        motor(a, k, 3.0);
+        label(x - 150, y - 135, '1. Four-Bar Linkage (crank-rocker)', 15, '#0f172a', true);
+        label(x - 150, y - 118, 'Four links: ground bar (grey), crank, coupler, rocker. Crank spins, rocker swings.', 12, '#1d4ed8');
+      })();
+
+      // 2. Slider-crank
+      (function() {
+        var x = COL[1], y = ROW[0];
+        var c = node(x - 70, y, true);
+        var k = node(x - 30, y, false);
+        var p = node(x + 90, y, false, 2);
+        var ra = node(x - 20, y, true);
+        var rb = node(x + 130, y, true);
+        rod(c, k, { width: 12, color: '#f59e0b' });
+        rod(k, p, { width: 11, color: '#3b82f6' });
+        slider(p, ra, rb, 10, 130);
+        motor(c, k, 4.5);
+        label(x - 150, y - 135, '2. Slider-Crank', 15, '#0f172a', true);
+        label(x - 150, y - 118, 'Crank rotation becomes back-and-forth travel of the piston on the rail.', 12, '#1d4ed8');
+      })();
+
+      // 3. Sliders in three directions
+      (function() {
+        var x = COL[2], y = ROW[0];
+        var va = node(x - 90, y - 90, true);
+        var vb = node(x - 90, y + 90, true);
+        var vc = node(x - 90, y, false, 2);
+        slider(vc, va, vb, 16, 164);
+        var ha = node(x - 60, y + 55, true);
+        var hb = node(x + 60, y + 55, true);
+        var hc = node(x, y + 55, false, 2);
+        slider(hc, ha, hb, 16, 104);
+        var ang = Math.PI / 4;
+        var acx = x + 70, acy = y - 60, half = 50;
+        var aa = node(acx - half * Math.cos(ang), acy - half * Math.sin(ang), true);
+        var ab = node(acx + half * Math.cos(ang), acy + half * Math.sin(ang), true);
+        var ac = node(acx, acy, false, 2);
+        slider(ac, aa, ab, 16, 84, 0.9);
+        label(x - 150, y - 135, '3. Sliders, Three Directions', 15, '#0f172a', true);
+        label(x - 150, y - 118, 'Vertical and horizontal rails with end-stops, 45 deg rail with friction. Drag carriages.', 12, '#b45309');
+      })();
+
+      // 4. Springs and mass
+      (function() {
+        var x = COL[3], y = ROW[0];
+        var a1 = node(x - 70, y - 70, true);
+        var m1 = node(x + 20, y - 70, false, 1);
+        spring(a1, m1, 60, 60);
+        var a2 = node(x - 70, y, true);
+        var m2 = node(x + 20, y, false, 1);
+        spring(a2, m2, 60, 300);
+        var a3 = node(x - 70, y + 70, true);
+        var m3 = node(x + 20, y + 70, false, 3);
+        spring(a3, m3, 60, 60);
+        label(x - 150, y - 135, '4. Springs and Mass', 15, '#0f172a', true);
+        label(x - 150, y - 118, 'Same stretch: stiffer spring (middle) is faster, heavier mass (bottom) is slower.', 12, '#047857');
+      })();
+
+      // 5. Cam and roller follower
+      (function() {
+        var x = COL[0], y = ROW[1];
+        var cc = node(x - 90, y, true);
+        var f = node(x - 52, y, false, 1);
+        var ra = node(x - 70, y, true);
+        var rb = node(x + 120, y, true);
+        slider(f, ra, rb, 4, 72);
+        var anchor = node(x + 140, y, true);
+        spring(f, anchor, 260, 2500);
+        cam(cc, 'pear', 30, 25, Math.PI);
+        camContact(0, f, 8);
+        motor(cc, cc, 1.5);
+        label(x - 150, y - 135, '5. Cam and Roller Follower', 15, '#0f172a', true);
+        label(x - 150, y - 118, 'Pear cam lifts the roller as it turns; the return spring presses the roller back.', 12, '#6d28d9');
+      })();
+
+      // 6. Gears and axle
+      (function() {
+        var x = COL[1], y = ROW[1];
+        var g0 = node(x - 110, y, true);
+        var g1 = node(x - 30, y, true);
+        var g2 = node(x + 66, y, true);
+        gear(g0, 24, 12, [1]);
+        gear(g1, 56, 28, [0, 2]);
+        gear(g2, 40, 20, [1]);
+        motor(g0, g0, 4.0);
+        node(x + 91, y, false, 1, { parentGear: { gearIdx: 2, radius: 25, angleOffset: 0 } });
+        var g3 = node(x + 66, y + 110, true);
+        gear(g3, 30, 15, []);
+        model.axles.push({
+          targetA: { type: 'gear', index: 2 },
+          targetB: { type: 'gear', index: 3 },
+          ratio: 1.5,
+          shaftNodeA: g2,
+          shaftNodeB: g3
+        });
+        label(x - 150, y - 135, '6. Gears and Axle', 15, '#0f172a', true);
+        label(x - 150, y - 118, 'Each mesh reverses direction and changes speed. A crankpin orbits the last gear.', 12, '#1d4ed8');
+        label(x - 150, y - 101, 'The lower gear is coupled to the output by an axle at ratio 1.5.', 12, '#64748b');
+      })();
+
+      // 7. Geneva indexer
+      (function() {
+        var x = COL[2], y = ROW[1];
+        var drv = node(x, y, true);
+        var pin = node(x, y + 42.43, false);
+        var whl = node(x + 60, y, true);
+        rod(drv, pin, { width: 8, color: '#f59e0b' });
+        model.genevas.push({
+          driverCenterNode: drv,
+          driverPinNode: pin,
+          genevaCenterNode: whl,
+          slots: 4,
+          slotWidth: 12,
+          angle: Math.PI * 0.75
+        });
+        motor(drv, pin, 2.0);
+        label(x - 150, y - 135, '7. Geneva Indexer', 15, '#0f172a', true);
+        label(x - 150, y - 118, 'Wheel advances 90 deg per driver turn, then dwells (locks).', 12, '#4338ca');
+      })();
+
+      // 8. Belts and pulleys
+      (function() {
+        var x = COL[3], y = ROW[1];
+        var p0 = node(x - 100, y, true);
+        var p1 = node(x + 10, y - 50, true);
+        var p2 = node(x + 110, y + 20, true);
+        pulley(p0, 40);
+        pulley(p1, 22);
+        pulley(p2, 30);
+        belt(0, 1, false);
+        belt(1, 2, true);
+        motor(p0, p0, 3.0);
+        label(x - 150, y - 135, '8. Belts and Pulleys', 15, '#0f172a', true);
+        label(x - 150, y - 118, 'Open belt keeps direction; crossed belt reverses it. Radii set the ratio.', 12, '#0369a1');
+        label(x - 150, y - 101, 'Make your own: place Pulleys, pick the Belt tool, click pulley A then B (Shift = crossed).', 12, '#64748b');
+      })();
+
+      // 9. Lever / bell-crank (manual)
+      (function() {
+        var x = COL[0], y = ROW[2];
+        var p = node(x, y, true);
+        var h = node(x, y - 80, false, 1, { isHandle: true });
+        var o = node(x + 80, y, false, 1);
+        model.brackets.push({ a: h, b: p, c: o, width: 14, color: '#6366f1' });
+        label(x - 150, y - 135, '9. Lever / Bell-Crank (manual)', 15, '#0f172a', true);
+        label(x - 150, y - 118, 'Drag the pink knob; the rigid arm swings about its pivot and moves the output.', 12, '#4338ca');
+      })();
+
+      // 10. Over-center toggle (manual)
+      (function() {
+        var x = COL[1], y = ROW[2];
+        var p0 = node(x - 80, y, true);
+        var knee = node(x, y - 25, false);
+        var head = node(x + 75, y, false, 1);
+        var ra = node(x + 10, y, true);
+        var rb = node(x + 150, y, true);
+        node(x, y + 15, true);
+        var anchor = node(x, y - 85, true);
+        rod(p0, knee, { width: 12, color: '#f59e0b' });
+        rod(knee, head, { width: 12, color: '#3b82f6' });
+        spring(knee, anchor, 50, 100, { width: 12 });
+        slider(head, ra, rb, 0, 130);
+        label(x - 150, y - 135, '10. Over-Center Toggle (manual)', 15, '#0f172a', true);
+        label(x - 150, y - 118, 'Drag the knee past the center line; the spring snaps it to the other side (locks).', 12, '#2563eb');
+      })();
+
+      // 11. Orientation-locked beams
+      (function() {
+        var x = COL[2], y = ROW[2];
+        var h0 = node(x - 100, y - 20, true);
+        var h1 = node(x - 20, y - 20, false);
+        rod(h0, h1, { width: 11, color: '#3b82f6', angleLock: 'horizontal' });
+        var v0 = node(x + 20, y - 80, true);
+        var v1 = node(x + 20, y, false);
+        rod(v0, v1, { width: 11, color: '#10b981', angleLock: 'vertical' });
+        var a0 = node(x - 100, y + 80, true);
+        var a1 = node(x - 43.4, y + 136.6, false);
+        rod(a0, a1, { width: 11, color: '#f59e0b', angleLock: 'fixed', lockedAngle: Math.PI / 4 });
+        label(x - 150, y - 135, '11. Orientation-Locked Beams', 15, '#0f172a', true);
+        label(x - 150, y - 118, 'Drag the free ends: beams hold horizontal, vertical, or a fixed 45 deg angle.', 12, '#b45309');
+      })();
+
+      // 12. Motor torque limit
+      (function() {
+        var x = COL[3], y = ROW[2];
+        var c = node(x, y - 60, true);
+        var k = node(x + 30, y - 60, false);
+        var anchor = node(x, y + 90, true);
+        spring(k, anchor, 120, 5, { width: 12, color: '#ef4444' });
+        motor(c, k, 3.0, { maxTorque: 6000 });
+        label(x - 150, y - 135, '12. Motor Torque Limit', 15, '#0f172a', true);
+        label(x - 150, y - 118, 'Limited torque slows the motor under spring load. Open its properties and enable Unlimited Torque.', 12, '#b91c1c');
+      })();
+
+      return model;
+    })()
+  };
 
   return MechanismEditor;
 });

@@ -156,20 +156,7 @@ function simulatePreset(preset, name, frames) {
 }
 
 const presets = [
-  'fourbar',
-  'sliderCrank',
-  'chebyshev',
-  'klann',
-  'jansen',
-  'gearedBellCrank',
-  'gearTrain',
-  'geneva',
-  'camFollower',
-  'beltDrive',
-  'gearbox',
-  'escapement',
-  'overcenter',
-  'showcase'
+  'sandbox'
 ];
 
 let failedCount = 0;

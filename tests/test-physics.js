@@ -564,26 +564,44 @@ console.log('Running Linksim Physics & Timeline Test Suite...');
   console.log('PASS: Dynamic gear meshing and disengaging on sliders');
 }
 
-// Test 21: Gearbox preset multi-speed transmission and shift lever
+// Test 21: Interaction Sandbox preset covers every element type and simulates cleanly
 {
   const MechanismEditor = require('../js/editor.js');
-  assert(MechanismEditor.Presets.gearbox, 'gearbox preset is missing from MechanismEditor.Presets');
-  const preset = MechanismEditor.Presets.gearbox;
+  assert(MechanismEditor.Presets.sandbox, 'sandbox preset is missing from MechanismEditor.Presets');
+  const preset = MechanismEditor.Presets.sandbox;
 
-  assert(preset.sliders.length >= 1, 'gearbox preset should have a slider');
-  assert(preset.gears.length >= 3, 'gearbox preset should have at least 3 gears');
-  assert(preset.motors.length >= 1, 'gearbox preset should have a motor');
-  assert(preset.brackets.length >= 1, 'gearbox preset should have a shift lever bracket');
+  assert(preset.nodes.length > 0, 'sandbox preset should define nodes');
+  assert(preset.rods.length > 0, 'sandbox preset should define rods/linkages');
+  assert(preset.springs.length > 0, 'sandbox preset should define springs');
+  assert(preset.sliders.length > 0, 'sandbox preset should define sliders');
+  assert(preset.gears.length >= 3, 'sandbox preset should define meshing gears');
+  assert(preset.motors.length > 0, 'sandbox preset should define motors');
+  assert(preset.brackets.length > 0, 'sandbox preset should define a rigid bracket');
+  assert(preset.genevas.length > 0, 'sandbox preset should define a geneva mechanism');
+  assert(preset.pulleys.length > 0, 'sandbox preset should define pulleys');
+  assert(preset.belts.length > 0, 'sandbox preset should define belts');
+  assert(preset.axles.length > 0, 'sandbox preset should define an axle');
+  assert(preset.cams.length > 0, 'sandbox preset should define cams');
+  assert(preset.camContacts.length > 0, 'sandbox preset should define a cam follower contact');
+  assert(preset.labels.length > 0, 'sandbox preset should define labels describing expected results');
 
-  // Load into physics simulation
   const sim = new PhysicsSystem();
+  sim.substeps = 30;
   for (let i = 0; i < preset.nodes.length; i++) {
     const n = preset.nodes[i];
     sim.addNode(n.x, n.y, n.fixed, n.mass);
   }
   for (let r = 0; r < preset.rods.length; r++) {
     const rod = preset.rods[r];
-    sim.addRod(rod.a, rod.b, rod.length);
+    sim.addRod(rod.a, rod.b, rod.length, rod, rod.material);
+  }
+  for (let sp = 0; sp < preset.springs.length; sp++) {
+    const spr = preset.springs[sp];
+    sim.addSpring(spr.a, spr.b, spr.restLength, spr.stiffness, spr);
+  }
+  for (let br = 0; br < preset.brackets.length; br++) {
+    const b = preset.brackets[br];
+    sim.addRigidBracket(b.a, b.b, b.c, b.width, b.color);
   }
   for (let s = 0; s < preset.sliders.length; s++) {
     const sl = preset.sliders[s];
@@ -594,32 +612,49 @@ console.log('Running Linksim Physics & Timeline Test Suite...');
     const gObj = sim.addGear(gear.centerNode, gear.radius, gear.teeth);
     if (gear.meshWith) gObj.meshWith = gear.meshWith.slice();
   }
-  for (let p = 0; p < (preset.pulleys || []).length; p++) {
-    const pul = preset.pulleys[p];
-    sim.addPulley(pul.nodeId, pul.radius);
+  for (let gi = 0; gi < preset.genevas.length; gi++) {
+    const gen = preset.genevas[gi];
+    sim.addGeneva(gen.driverCenterNode, gen.driverPinNode, gen.genevaCenterNode, gen.slots, gen);
   }
-  for (let b = 0; b < (preset.belts || []).length; b++) {
+  for (let p = 0; p < preset.pulleys.length; p++) {
+    const pul = preset.pulleys[p];
+    sim.addPulley(pul.nodeId, pul.radius, pul);
+  }
+  for (let b = 0; b < preset.belts.length; b++) {
     const blt = preset.belts[b];
     sim.addBelt(blt.pulleyA, blt.pulleyB, blt);
   }
-  for (let br = 0; br < preset.brackets.length; br++) {
-    const b = preset.brackets[br];
-    sim.addRigidBracket(b.a, b.b, b.c);
+  for (let ci = 0; ci < preset.cams.length; ci++) {
+    const cam = preset.cams[ci];
+    sim.addCam(cam.centerNode, cam.profileType, cam.baseRadius, cam.lift, cam.options);
+  }
+  for (let cci = 0; cci < preset.camContacts.length; cci++) {
+    const cc = preset.camContacts[cci];
+    sim.addCamContact(cc.camIdx, cc.followerNode, cc.rollerRadius, cc);
+  }
+  for (let axi = 0; axi < preset.axles.length; axi++) {
+    const ax = preset.axles[axi];
+    sim.addAxle(ax.targetA, ax.targetB, ax);
+  }
+  for (let i = 0; i < preset.nodes.length; i++) {
+    const n = preset.nodes[i];
+    if (n.parentGear) sim.attachNodeToGear(n.id, n.parentGear.gearIdx, n.parentGear.radius, n.parentGear.angleOffset);
+    if (n.parentPulley) sim.attachNodeToPulley(n.id, n.parentPulley.pulleyIdx, n.parentPulley.radius, n.parentPulley.angleOffset);
+    if (n.parentCam) sim.attachNodeToCam(n.id, n.parentCam.camIdx, n.parentCam.radius, n.parentCam.angleOffset);
   }
   for (let m = 0; m < preset.motors.length; m++) {
     const mot = preset.motors[m];
     sim.addMotor(mot.centerNode, mot.crankNode, mot.speed, mot);
   }
 
-  // Run 10 steps in initial position (1st gear)
-  for (let f = 0; f < 10; f++) {
+  for (let f = 0; f < 90; f++) {
     sim.step(1 / 60);
+    for (let i = 0; i < sim.numNodes; i++) {
+      assert(Number.isFinite(sim.x[i]) && Number.isFinite(sim.y[i]), `sandbox produced non-finite node ${i} at frame ${f}`);
+    }
   }
-  // Gear 2 (shifter gear on slider node 4) should be dynamically meshed with Gear 0
-  assert(sim.gears[2].meshWith.includes(0), 'Shifter gear 2 was not meshed with 1st speed gear 0');
-  assert(sim.gears[2].angle !== 0, 'Shifter gear did not rotate when in 1st gear');
 
-  console.log('PASS: Multi-speed Gearbox preset loading and dynamic transmission');
+  console.log('PASS: Interaction Sandbox preset covers all element types and simulates cleanly');
 }
 
 // Test 22: Beam orientation angle locking (horizontal, vertical, and fixed angle)
@@ -665,33 +700,23 @@ console.log('Running Linksim Physics & Timeline Test Suite...');
 
 // Test 23: Slider-crank full 360-degree stroke continuity without artificial limits
 {
-  const MechanismEditor = require('../js/editor.js');
-  const preset = MechanismEditor.Presets.sliderCrank;
   const sim = new PhysicsSystem();
-
-  for (let i = 0; i < preset.nodes.length; i++) {
-    const n = preset.nodes[i];
-    sim.addNode(n.x, n.y, n.fixed, n.mass);
-  }
-  for (let r = 0; r < preset.rods.length; r++) {
-    const rod = preset.rods[r];
-    sim.addRod(rod.a, rod.b, rod.length);
-  }
-  for (let s = 0; s < preset.sliders.length; s++) {
-    const sl = preset.sliders[s];
-    sim.addSlider(sl.node, sl.aNode, sl.bNode, sl.minT, sl.maxT);
-  }
-  for (let m = 0; m < preset.motors.length; m++) {
-    const mot = preset.motors[m];
-    sim.addMotor(mot.centerNode, mot.crankNode, mot.speed);
-  }
+  const c = sim.addNode(-100, 0, true);
+  const k = sim.addNode(-60, 0, false);
+  const p = sim.addNode(70, 0, false, 2);
+  const ra = sim.addNode(-40, 0, true);
+  const rb = sim.addNode(180, 0, true);
+  sim.addRod(c, k, 40);
+  sim.addRod(k, p, 130);
+  sim.addSlider(p, ra, rb);
+  sim.addMotor(c, k, 3.5);
 
   // Run full 2 rotations (~120 frames at 3.5 rad/s)
   let minX = Infinity;
   let maxX = -Infinity;
   for (let f = 0; f < 120; f++) {
     sim.step(1 / 60);
-    const px = sim.x[2];
+    const px = sim.x[p];
     if (px < minX) minX = px;
     if (px > maxX) maxX = px;
   }
@@ -699,7 +724,7 @@ console.log('Running Linksim Physics & Timeline Test Suite...');
   // Piston should smoothly sweep past 0 without returning to 0 or getting stuck
   assert(minX < 0, `Piston did not stroke past 0: minX = ${minX}`);
   assert(maxX > 50, `Piston did not stroke forward: maxX = ${maxX}`);
-  assert(Math.abs(sim.y[2]) < 1e-4, `Piston drifted vertically off rail: y = ${sim.y[2]}`);
+  assert(Math.abs(sim.y[p]) < 1e-4, `Piston drifted vertically off rail: y = ${sim.y[p]}`);
 
   console.log('PASS: Slider-crank full 360-degree stroke continuity without artificial end-stop stalls');
 }
@@ -747,6 +772,97 @@ console.log('Running Linksim Physics & Timeline Test Suite...');
   assert(Math.abs(dPivotPallet - Math2D.dist(0, -45, -38, -5)) < 1.0, `Anchor pallet arm flexed: ${dPivotPallet}`);
 
   console.log('PASS: Clock Escapement with ratchet cam profile & physical contact stepping');
+}
+
+// Test 25: Spring solid height prevents self pass-through on extreme recoil
+{
+  const sim = new PhysicsSystem();
+  const a = sim.addNode(0, 0, true);
+  const b = sim.addNode(100, 0, false);
+  sim.addSpring(a, b, 100, 400, { solidLength: 40 });
+  // Yank the mass far out, then release so it snaps back through the anchor
+  sim.x[b] = 400;
+
+  let minLen = Infinity;
+  for (let f = 0; f < 240; f++) {
+    sim.step(1 / 60);
+    const d = Math.hypot(sim.x[b] - sim.x[a], sim.y[b] - sim.y[a]);
+    if (d < minLen) minLen = d;
+  }
+
+  assert(minLen >= 39.0, `Spring compressed through its solid height: min length ${minLen.toFixed(2)}`);
+  console.log('PASS: Spring solid height prevents self pass-through on extreme recoil');
+}
+
+// Test 26: Motor maxTorque of null/Infinity means unlimited and never stalls
+{
+  const sim = new PhysicsSystem();
+  const c = sim.addNode(0, 0, true);
+  const k = sim.addNode(30, 0, false);
+  const load = sim.addNode(0, 100, true);
+  sim.addSpring(k, load, 40, 500);
+  const motor = sim.addMotor(c, k, 3.0, { maxTorque: null });
+
+  for (let f = 0; f < 120; f++) {
+    sim.step(1 / 60);
+  }
+
+  assert.strictEqual(motor.maxTorque, Infinity, 'null maxTorque should normalize to Infinity');
+  assert(!motor.stalled, 'Unlimited-torque motor must never stall');
+  assert(Math.abs(motor.actualSpeed - 3.0) < 1e-6, `Unlimited motor should hold speed, got ${motor.actualSpeed}`);
+  console.log('PASS: Motor maxTorque null/Infinity means unlimited (never stalls)');
+}
+
+// Test 27: Geneva wheel rotates smoothly through the transfer stroke (no snapping)
+{
+  const sim = new PhysicsSystem();
+  const drv = sim.addNode(0, 0, true);
+  const D = 60;
+  const pinR = D * Math.sin(Math.PI / 4);
+  const crank = sim.addNode(0, pinR, false);
+  const whl = sim.addNode(D, 0, true);
+  sim.addGeneva(drv, crank, whl, 4, { initialAngle: Math.PI * 0.75 });
+  sim.addMotor(drv, crank, 2.0);
+
+  let prev = sim.genevas[0].angle;
+  let maxJump = 0;
+  let engaged = 0;
+  for (let f = 0; f < 600; f++) {
+    sim.step(1 / 60);
+    const g = sim.genevas[0];
+    const d = Math.abs(Math2D.normalizeAngle(g.angle - prev));
+    if (g.isEngaged) {
+      engaged++;
+      if (d > maxJump) maxJump = d;
+    }
+    prev = g.angle;
+  }
+
+  assert(engaged > 30, 'Geneva should engage during the transfer stroke');
+  assert(maxJump < 0.25, `Geneva snapped during transfer: max per-frame jump ${maxJump} rad`);
+  const delta = Math2D.normalizeAngle(sim.genevas[0].angle - Math.PI * 0.75);
+  const steps = delta / (Math.PI / 2);
+  assert(Math.abs(steps - Math.round(steps)) < 1e-6, `Geneva dwell not on an indexed position: ${steps} steps`);
+  console.log('PASS: Geneva wheel rotates smoothly through transfer and locks on an indexed position');
+}
+
+// Test 28: Slider end-stops clamp travel within the rail
+{
+  const sim = new PhysicsSystem();
+  const a = sim.addNode(0, 0, true);
+  const b = sim.addNode(120, 0, true);
+  const n = sim.addNode(60, 0, false);
+  sim.addSlider(n, a, b, 16, 104);
+
+  sim.setMouseDrag(n, 100000, 0);
+  for (let f = 0; f < 120; f++) sim.step(1 / 60);
+  assert(Math.abs(sim.x[n] - 104) < 0.5, `Slider did not clamp to max stop: x=${sim.x[n]}`);
+
+  sim.setMouseDrag(n, -100000, 0);
+  for (let f = 0; f < 120; f++) sim.step(1 / 60);
+  assert(Math.abs(sim.x[n] - 16) < 0.5, `Slider did not clamp to min stop: x=${sim.x[n]}`);
+
+  console.log('PASS: Slider end-stops clamp travel within the rail limits');
 }
 
 console.log('All tests passed successfully!');
