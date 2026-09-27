@@ -35,6 +35,7 @@
     this.cams = [];           // [{ centerNode, profileType, baseRadius, lift, options }]
     this.camContacts = [];    // [{ camIdx, followerNode, rollerRadius }]
     this.springs = [];        // [{ a, b, restLength, stiffness, width, color }]
+    this.labels = [];          // [{ x, y, text, fontSize, color, bold }]
     this.trackedNodes = new Set(); // Node IDs being tracked for motion paths
 
     // Selection state for all elements
@@ -703,6 +704,7 @@
     this.axles = [];
     this.cams = [];
     this.camContacts = [];
+    this.labels = [];
     this.selection = null;
     this.trackedNodes.clear();
     if (this.renderer) {
@@ -736,7 +738,8 @@
       belts: JSON.parse(JSON.stringify(this.belts)),
       axles: JSON.parse(JSON.stringify(this.axles)),
       cams: JSON.parse(JSON.stringify(this.cams)),
-      camContacts: JSON.parse(JSON.stringify(this.camContacts))
+      camContacts: JSON.parse(JSON.stringify(this.camContacts)),
+      labels: JSON.parse(JSON.stringify(this.labels || []))
     };
   };
 
@@ -755,6 +758,7 @@
     this.axles = data.axles || [];
     this.cams = data.cams || [];
     this.camContacts = data.camContacts || [];
+    this.labels = data.labels || [];
     this.selectedNodeId = -1;
     this.selection = null;
     this.isConnecting = false;
@@ -859,6 +863,41 @@
     this.genevas.push(geneva);
     this._notifyChange();
     return geneva;
+  };
+
+
+  MechanismEditor.prototype.addLabel = function(x, y, text, options) {
+    this.saveState();
+    options = options || {};
+    var label = {
+      x: x,
+      y: y,
+      text: text || 'Label',
+      fontSize: options.fontSize || 14,
+      color: options.color || '#1e293b',
+      bold: !!options.bold
+    };
+    this.labels.push(label);
+    this._notifyChange();
+    return label;
+  };
+
+  MechanismEditor.prototype.deleteLabel = function(idx) {
+    this.saveState();
+    this.labels.splice(idx, 1);
+    this._notifyChange();
+  };
+
+  MechanismEditor.prototype.findLabelNear = function(wx, wy) {
+    for (var i = this.labels.length - 1; i >= 0; i--) {
+      var lb = this.labels[i];
+      var dx = wx - lb.x;
+      var dy = wy - lb.y;
+      if (Math.abs(dx) < (lb.text.length * lb.fontSize * 0.35) && Math.abs(dy) < lb.fontSize * 1.5) {
+        return i;
+      }
+    }
+    return -1;
   };
 
   MechanismEditor.prototype._bindEvents = function() {
@@ -1073,6 +1112,14 @@
       if (self.activeTool === 'add_cam') {
         var cId = self.addNode(w.x, w.y, true);
         self.addCam(cId, 'pear', 35, 25);
+        self.render();
+        return;
+      }
+      if (self.activeTool === 'add_label') {
+        var labelText = window.prompt('Label text:', 'Label');
+        if (labelText !== null && labelText.trim() !== '') {
+          self.addLabel(w.x, w.y, labelText.trim());
+        }
         self.render();
         return;
       }
@@ -1860,6 +1907,38 @@
       ctx.restore();
     }
 
+    // 8.9 Draw Canvas Text Labels
+    if (this.labels && this.labels.length > 0) {
+      for (var li = 0; li < this.labels.length; li++) {
+        var lbl = this.labels[li];
+        if (!lbl.text) continue;
+        var fs = (lbl.fontSize || 14);
+        ctx.save();
+        ctx.font = (lbl.bold ? 'bold ' : '') + fs + 'px system-ui, sans-serif';
+        ctx.fillStyle = lbl.color || '#1e293b';
+        ctx.textBaseline = 'top';
+        // Background pill for readability
+        var tw = ctx.measureText(lbl.text).width;
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.82)';
+        ctx.beginPath();
+        ctx.roundRect
+          ? ctx.roundRect(lbl.x - 3, lbl.y - 2, tw + 6, fs + 6, 4)
+          : ctx.rect(lbl.x - 3, lbl.y - 2, tw + 6, fs + 6);
+        ctx.fill();
+        ctx.fillStyle = lbl.color || '#1e293b';
+        ctx.font = (lbl.bold ? 'bold ' : '') + fs + 'px system-ui, sans-serif';
+        ctx.fillText(lbl.text, lbl.x, lbl.y);
+        // Edit-mode drag handle dot
+        if (this.mode === 'edit') {
+          ctx.beginPath();
+          ctx.arc(lbl.x - 3, lbl.y + fs / 2, 3.5, 0, Math.PI * 2);
+          ctx.fillStyle = '#64748b';
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+    }
+
     ctx.restore();
 
     // 9. Physical SI scale ruler
@@ -2050,21 +2129,26 @@
       brackets: []
     },
 
-    // 6. Geneva Mechanism (Maltese Cross Intermittent Indexer & Output Rocker)
+    // 6. Geneva Mechanism (Maltese Cross Intermittent Indexer + Output Rocker)
+    // c1 at (-60,0), c2 at (60,0), D=120. beta=45 deg, crankRadius = 120*sin(45) = 84.85
+    // pin starts at angle -45 deg from c1 => (-60 + 84.85*cos(-45), 84.85*sin(-45)) = (0, -60)
+    // Geneva wheel radius = 120*cos(45) = 84.85
+    // Motor CCW (speed=3.0) causes wheel to index CW (negative direction).
+    // Follower pin attached at 90 deg offset from Geneva center for a rocker output.
     geneva: {
       version: '2.0',
       nodes: [
-        { id: 0, x: -60, y: 0, fixed: true, mass: 1 },    // Driver center C1
+        { id: 0, x: -60, y: 0, fixed: true, mass: 1 },    // Driver crank center C1
         { id: 1, x: 60, y: 0, fixed: true, mass: 1 },     // Geneva wheel center C2
-        { id: 2, x: 0, y: -60, fixed: false, mass: 1 },   // Drive crank pin P
+        { id: 2, x: 0, y: -60, fixed: false, mass: 1 },   // Drive crank pin (at -45 deg from C1, dist=84.85)
         { id: 3, x: 60, y: 55, fixed: false, mass: 1, parentGeneva: { genevaIdx: 0, radius: 55, angleOffset: Math.PI / 2 } }, // Follower pin on Geneva
-        { id: 4, x: 180, y: 55, fixed: false, mass: 1 },  // Transmission rocker joint
-        { id: 5, x: 180, y: 135, fixed: true, mass: 1 }   // Rocker ground pivot
+        { id: 4, x: 185, y: 55, fixed: false, mass: 1 },  // Transmission rocker joint
+        { id: 5, x: 185, y: 140, fixed: true, mass: 1 }   // Rocker ground pivot
       ],
       rods: [
         { a: 0, b: 2, length: 84.85, width: 8, color: '#f59e0b' },
-        { a: 3, b: 4, length: 120, width: 10, color: '#3b82f6' },
-        { a: 4, b: 5, length: 80, width: 12, color: '#10b981' }
+        { a: 3, b: 4, length: 125, width: 10, color: '#3b82f6' },
+        { a: 4, b: 5, length: 85, width: 12, color: '#10b981' }
       ],
       sliders: [],
       gears: [],
@@ -2074,7 +2158,12 @@
       motors: [
         { centerNode: 0, crankNode: 2, speed: 3.0 }
       ],
-      brackets: []
+      brackets: [],
+      labels: [
+        { x: -110, y: -25, text: 'Drive Crank', fontSize: 11, color: '#b45309', bold: false },
+        { x: 25, y: -105, text: 'Geneva Wheel (4-slot)', fontSize: 11, color: '#475569', bold: false },
+        { x: 155, y: -25, text: 'Output Rocker', fontSize: 11, color: '#047857', bold: false }
+      ]
     },
 
     // 7. Overhead Cam & Valve Follower (Physical Camming)
@@ -2197,6 +2286,101 @@
       ],
       brackets: [
         { a: 6, b: 5, c: 7, width: 14, color: '#6366f1' } // Rigid shift lever
+      ]
+    },
+
+    // 10. Mechanism Showcase: several independent mechanisms demonstrating different features
+    // Layout: Slider-Crank (left), Gear Train (centre), Cam-Follower (right), Spring-Mass (bottom)
+    showcase: {
+      version: '2.0',
+      nodes: [
+        // --- Slider-Crank Piston (top-left) ---
+        { id: 0, x: -250, y: -120, fixed: true, mass: 1 },   // Crank pivot
+        { id: 1, x: -250, y: -180, fixed: false, mass: 1 },  // Crank pin
+        { id: 2, x: -130, y: -180, fixed: false, mass: 2 },  // Connecting rod / piston
+        { id: 3, x: -70,  y: -180, fixed: true, mass: 1 },   // Slider rail start
+        { id: 4, x: -310, y: -180, fixed: true, mass: 1 },   // Slider rail end
+
+        // --- Compound Gear Train (top-centre) ---
+        { id: 5, x: 0,   y: -130, fixed: true, mass: 1 },   // Input pinion
+        { id: 6, x: 70,  y: -130, fixed: true, mass: 1 },   // Idler gear
+        { id: 7, x: 150, y: -130, fixed: true, mass: 1 },   // Output gear
+
+        // --- Cam & Follower (top-right) ---
+        { id: 8,  x: 290, y: -130, fixed: true, mass: 1 },  // Cam center
+        { id: 9,  x: 290, y: -75, fixed: false, mass: 1 },   // Roller follower
+        { id: 10, x: 290, y: -100, fixed: true, mass: 1 },  // Follower guide top
+        { id: 11, x: 290, y: -40,  fixed: true, mass: 1 },  // Follower guide bottom
+        { id: 12, x: 290, y: 0,    fixed: true, mass: 1 },  // Spring bottom anchor
+
+        // --- Spring-Mass Oscillator (bottom-left) ---
+        { id: 13, x: -250, y: 50,  fixed: true, mass: 1 },  // Spring top anchor
+        { id: 14, x: -250, y: 150, fixed: false, mass: 3 }, // Mass (bob)
+
+        // --- Belt & Pulley drive (bottom-centre) ---
+        { id: 15, x: 20,  y: 60,  fixed: true, mass: 1 },  // Drive pulley
+        { id: 16, x: 130, y: 60,  fixed: true, mass: 1 },  // Driven pulley
+
+        // --- 4-bar linkage (bottom-right) ---
+        { id: 17, x: 230, y: 60,   fixed: true, mass: 1 },  // Ground pivot A
+        { id: 18, x: 230, y: -20,  fixed: false, mass: 1 }, // Crank end
+        { id: 19, x: 330, y: -20,  fixed: false, mass: 1 }, // Coupler end
+        { id: 20, x: 360, y: 60,   fixed: true, mass: 1 }   // Ground pivot B
+      ],
+      rods: [
+        // Slider-crank
+        { a: 0, b: 1, length: 60, width: 9, color: '#f59e0b' },   // Crank arm
+        { a: 1, b: 2, length: 130, width: 8, color: '#64748b' },   // Connecting rod
+
+        // 4-bar linkage
+        { a: 17, b: 18, length: 80, width: 9, color: '#f59e0b' },  // Crank
+        { a: 18, b: 19, length: 105, width: 8, color: '#64748b' }, // Coupler
+        { a: 19, b: 20, length: 82, width: 9, color: '#10b981' }   // Follower
+      ],
+      springs: [
+        // Spring-mass oscillator
+        { a: 13, b: 14, restLength: 60, stiffness: 120, width: 14, color: '#10b981' },
+        // Cam follower return spring
+        { a: 9, b: 12, restLength: 35, stiffness: 250, width: 10, color: '#6366f1' }
+      ],
+      sliders: [
+        { node: 2, aNode: 3, bNode: 4 }   // Piston slider rail
+      ],
+      gears: [
+        { centerNode: 5, radius: 30, teeth: 12, meshWith: [1] },   // Input pinion
+        { centerNode: 6, radius: 50, teeth: 20, meshWith: [0, 2] },// Idler
+        { centerNode: 7, radius: 35, teeth: 14, meshWith: [1] }    // Output
+      ],
+      pulleys: [
+        { nodeId: 15, radius: 28 },
+        { nodeId: 16, radius: 18 }
+      ],
+      belts: [
+        { pulleyA: 0, pulleyB: 1, crossed: false, width: 7 }
+      ],
+      axles: [],
+      genevas: [],
+      cams: [
+        { centerNode: 8, profileType: 'pear', baseRadius: 30, lift: 25, options: {} }
+      ],
+      camContacts: [
+        { camIdx: 0, followerNode: 9, rollerRadius: 8 }
+      ],
+      motors: [
+        { centerNode: 0, crankNode: 1, speed: 2.5 },    // Drives slider-crank
+        { centerNode: 5, crankNode: 5, speed: 2.0 },    // Drives gear train
+        { centerNode: 8, crankNode: 8, speed: 1.8 },    // Drives cam
+        { centerNode: 15, crankNode: 15, speed: 3.0 },  // Drives belt
+        { centerNode: 17, crankNode: 18, speed: 1.5 }   // Drives 4-bar linkage
+      ],
+      brackets: [],
+      labels: [
+        { x: -310, y: -230, text: 'Slider-Crank Piston Engine', fontSize: 13, color: '#b45309', bold: true },
+        { x: -55,  y: -230, text: 'Compound Gear Train', fontSize: 13, color: '#1d4ed8', bold: true },
+        { x: 225,  y: -230, text: 'Cam + Follower Valve', fontSize: 13, color: '#6d28d9', bold: true },
+        { x: -310, y: 0,    text: 'Spring-Mass Oscillator', fontSize: 13, color: '#047857', bold: true },
+        { x: -55,  y: 0,    text: 'Belt & Pulley Drive', fontSize: 13, color: '#0369a1', bold: true },
+        { x: 185,  y: 0,    text: '4-Bar Linkage', fontSize: 13, color: '#b45309', bold: true }
       ]
     }
   };

@@ -339,6 +339,7 @@
     var wheelRadius = D * Math.cos(beta);
     var lockRadius = Math.max(10, D - pinRadius);
 
+    var initAngle = options.initialAngle !== undefined ? options.initialAngle : (options.angle || 0);
     var geneva = {
       driverCenterNode: driverCenterNode,
       driverPinNode: driverPinNode,
@@ -348,8 +349,10 @@
       pinRadius: pinRadius,
       radius: wheelRadius,
       lockRadius: lockRadius,
-      angle: options.initialAngle || 0,
-      dwellAngle: options.initialAngle || 0,
+      initialDwellAngle: initAngle,
+      angle: initAngle,
+      dwellAngle: initAngle,
+      engagedSlot: 0,
       angularVelocity: 0,
       isEngaged: false,
       slotWidth: options.slotWidth || 10,
@@ -693,6 +696,7 @@
 
         var centerAngle = Math.atan2(c1y - c2y, c1x - c2x);
         var beta = Math.PI / g.slots;
+        var dTheta = (2 * Math.PI) / g.slots;
         var dirC1toC2 = centerAngle + Math.PI;
 
         var crankAngle = Math.atan2(py - c1y, px - c1x);
@@ -702,20 +706,49 @@
         var ry = py - c2y;
         var rDist = Math.hypot(rx, ry);
 
-        var inSlot = (Math.abs(phiRel) <= beta + 0.03) && (rDist <= g.radius + 4);
+        var inSlot = (Math.abs(phiRel) <= beta + 0.03) && (rDist <= g.radius + 6);
 
         if (inSlot) {
           var thetaPin = Math.atan2(ry, rx);
-          var psiRel = Math2D.normalizeAngle(thetaPin - centerAngle);
-          var rotDelta = -(psiRel - beta);
-          g.angle = g.dwellAngle + rotDelta;
-          g.isEngaged = true;
-          g.angularVelocity = (rotDelta / h);
-          g.contactForce = Math.abs(rotDelta) * 50;
+          if (!g.isEngaged) {
+            g.isEngaged = true;
+            // Identify which slot k is engaged with the drive pin
+            var minDiff = Infinity;
+            var bestSlot = 0;
+            for (var k = 0; k < g.slots; k++) {
+              var slotWorldA = g.dwellAngle + k * dTheta;
+              var diffK = Math.abs(Math2D.normalizeAngle(thetaPin - slotWorldA));
+              if (diffK < minDiff) {
+                minDiff = diffK;
+                bestSlot = k;
+              }
+            }
+            g.engagedSlot = bestSlot;
+            // Reset entry angle so the first-frame-after-engagement logic captures it fresh
+            g.angleAtEngagementEntry = undefined;
+          }
+          var targetAngle = thetaPin - g.engagedSlot * dTheta;
+          var angleDiff = Math2D.normalizeAngle(targetAngle - g.dwellAngle);
+          var prevAngle = g.angle;
+          g.angle = g.dwellAngle + angleDiff;
+          // Record the true entry angle on the first engaged frame (after first computation)
+          if (g.angleAtEngagementEntry === undefined) {
+            g.angleAtEngagementEntry = g.angle;
+          }
+          g.angularVelocity = (g.angle - prevAngle) / h;
+          g.contactForce = Math.abs(g.angularVelocity) * 25;
         } else {
           if (g.isEngaged) {
-            var step = (2 * Math.PI) / g.slots;
-            g.dwellAngle = Math.round(g.angle / step) * step;
+            // entryAngle: first-frame Geneva angle when the pin entered the slot
+            // g.angle:    current (exit) angle
+            // Measure how many dwell-steps (dTheta each) elapsed during this engagement.
+            // Apply that step-count to the PRE-STROKE dwell, not to entryAngle,
+            // because entryAngle is an instantaneous tracking position, not a dwell position.
+            var priorDwell = g.dwellAngle;
+            var entryAngle = (g.angleAtEngagementEntry !== undefined) ? g.angleAtEngagementEntry : g.angle;
+            var totalChange = g.angle - entryAngle;
+            var numSteps = Math.round(totalChange / dTheta);
+            g.dwellAngle = priorDwell + numSteps * dTheta;
             g.isEngaged = false;
           }
           g.angle = g.dwellAngle;

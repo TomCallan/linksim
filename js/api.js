@@ -468,6 +468,26 @@
           }
           if (editor) editor._notifyChange();
         }
+      },
+
+      // Add a text label at world coordinates (x, y) with given text and style options
+      addLabel: function(x, y, text, options) {
+        if (!editor) return null;
+        return editor.addLabel(x, y, text, options);
+      },
+
+      // Remove a label by index
+      deleteLabel: function(idx) {
+        if (!editor) return;
+        editor.deleteLabel(idx);
+      },
+
+      // Get all labels
+      getLabels: function() {
+        if (!editor) return [];
+        return (editor.labels || []).map(function(lb) {
+          return { x: lb.x, y: lb.y, text: lb.text, fontSize: lb.fontSize, color: lb.color, bold: lb.bold };
+        });
       }
     };
 

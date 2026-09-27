@@ -480,6 +480,8 @@
         selectTool('add_gear');
       } else if (e.key === 'm' || e.key === 'M') {
         selectTool('add_motor');
+      } else if (e.key === 't' || e.key === 'T') {
+        selectTool('add_label');
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         if (editor.selection) {
           editor.deleteSelection();
