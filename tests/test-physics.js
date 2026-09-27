@@ -439,4 +439,22 @@ console.log('Running Linksim Physics & Timeline Test Suite...');
   console.log('PASS: Human input derails loop cache, runs live physics, and recovers cleanly after release');
 }
 
+// Test 17: Geneva Wheel Vector Polygon Profile & Cam Integration
+{
+  const pts = Math2D.getGenevaPoints(4, 84.85, 120, 11);
+  assert(Array.isArray(pts), 'Geneva points is not an array');
+  assert(pts.length >= 60, `Geneva points too sparse: ${pts.length}`);
+
+  // Test cam profile radius at 0 rad (inside slot) vs 45 deg (at concave dwell cutout)
+  const rSlot = Math2D.getCamRadius('geneva', 0, 84.85, 0, { slots: 4, centerDistance: 120, slotWidth: 11 });
+  const rDwell = Math2D.getCamRadius('geneva', Math.PI / 4, 84.85, 0, { slots: 4, centerDistance: 120, slotWidth: 11 });
+
+  // In the slot (0 rad), radius should be near slot bottom (~35)
+  assert(rSlot < 50, `Geneva slot radius too high: ${rSlot}`);
+  // In the dwell cutout (45 deg = pi/4), radius should be between ~40 and 85
+  assert(rDwell > 35 && rDwell < 85, `Geneva dwell cutout radius unexpected: ${rDwell}`);
+
+  console.log('PASS: Geneva Wheel Vector Polygon Profile & Cam Integration');
+}
+
 console.log('All tests passed successfully!');

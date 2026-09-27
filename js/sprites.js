@@ -481,63 +481,27 @@
   };
 
   /**
-   * Render Geneva Wheel (Maltese Cross) with radial drive slots and concave locking cutouts.
+   * Render Geneva Wheel (Maltese Cross) with radial drive slots and mathematically exact concave locking cutouts.
    */
-  SpriteRenderer.prototype.drawGenevaWheel = function(ctx, cx, cy, radius, slots, angle, lockRadius, slotWidth) {
+  SpriteRenderer.prototype.drawGenevaWheel = function(ctx, cx, cy, radius, slots, angle, lockRadius, slotWidth, centerDistance) {
     slots = slots || 4;
-    lockRadius = lockRadius || (radius * 0.45);
-    slotWidth = slotWidth || 10;
-    var halfSlotW = slotWidth / 2;
-    var slotDepth = radius * 0.60;
-    var slotBottomR = radius - slotDepth;
+    radius = radius || 84.85;
+    centerDistance = centerDistance || (radius * Math.SQRT2);
+    slotWidth = slotWidth || 11;
+    lockRadius = lockRadius || 40;
+
+    var pts = Math2D.getGenevaPoints(slots, radius, centerDistance, slotWidth);
+    if (!pts || pts.length < 3) return;
 
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(angle);
 
-    var dTheta = (Math.PI * 2) / slots;
-    var stepAngle = dTheta / 2;
-
+    // 1. Draw solid Maltese cross body
     ctx.beginPath();
-    for (var k = 0; k < slots; k++) {
-      var slotA = k * dTheta;
-      var cosS = Math.cos(slotA);
-      var sinS = Math.sin(slotA);
-      var perpX = -sinS;
-      var perpY = cosS;
-
-      // Slot outer corners
-      var tipRX = radius * cosS + halfSlotW * perpX;
-      var tipRY = radius * sinS + halfSlotW * perpY;
-      var tipLX = radius * cosS - halfSlotW * perpX;
-      var tipLY = radius * sinS - halfSlotW * perpY;
-
-      // Slot bottom corners
-      var botRX = slotBottomR * cosS + halfSlotW * perpX;
-      var botRY = slotBottomR * sinS + halfSlotW * perpY;
-
-      if (k === 0) {
-        ctx.moveTo(tipRX, tipRY);
-      } else {
-        ctx.lineTo(tipRX, tipRY);
-      }
-
-      // Slot wall down, round bottom, wall up
-      ctx.lineTo(botRX, botRY);
-      ctx.arc(slotBottomR * cosS, slotBottomR * sinS, halfSlotW, slotA - Math.PI / 2, slotA + Math.PI / 2, false);
-      ctx.lineTo(tipLX, tipLY);
-
-      // Concave locking arc cutout between slot k and slot k+1
-      var midA = slotA + stepAngle;
-      var nextSlotA = (k + 1) * dTheta;
-      var nextTipRX = radius * Math.cos(nextSlotA) + halfSlotW * (-Math.sin(nextSlotA));
-      var nextTipRY = radius * Math.sin(nextSlotA) + halfSlotW * (Math.cos(nextSlotA));
-
-      var indentR = radius * 0.72;
-      var indentX = indentR * Math.cos(midA);
-      var indentY = indentR * Math.sin(midA);
-
-      ctx.quadraticCurveTo(indentX, indentY, nextTipRX, nextTipRY);
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (var i = 1; i < pts.length; i++) {
+      ctx.lineTo(pts[i][0], pts[i][1]);
     }
     ctx.closePath();
 
@@ -547,14 +511,29 @@
     ctx.strokeStyle = '#334155';
     ctx.stroke();
 
-    // Chamfer guideline
+    // 2. Machined circular cutouts on each Geneva lobe / arm
+    var dTheta = (Math.PI * 2) / slots;
+    for (var k = 0; k < slots; k++) {
+      var lobeA = k * dTheta + dTheta * 0.5;
+      var cDist = radius * 0.52;
+      var cR = radius * 0.12;
+      ctx.beginPath();
+      ctx.arc(cDist * Math.cos(lobeA), cDist * Math.sin(lobeA), cR, 0, Math.PI * 2);
+      ctx.fillStyle = '#f8fafc';
+      ctx.fill();
+      ctx.lineWidth = 1.2;
+      ctx.strokeStyle = '#475569';
+      ctx.stroke();
+    }
+
+    // 3. Chamfer highlight
     ctx.beginPath();
-    ctx.arc(0, 0, radius * 0.92, 0, Math.PI * 2);
+    ctx.arc(0, 0, radius * 0.94, 0, Math.PI * 2);
     ctx.lineWidth = 1;
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
     ctx.stroke();
 
-    // Central hub & brass bushing
+    // 4. Central hub, brass bushing, and axle pin
     ctx.beginPath();
     ctx.arc(0, 0, radius * 0.28, 0, Math.PI * 2);
     ctx.fillStyle = '#64748b';
@@ -579,39 +558,49 @@
   };
 
   /**
-   * Render Cam Driver plate with drive crank pin and circular locking collar.
+   * Render Cam Driver plate with drive crank pin and authentic circular crescent locking collar disc.
    */
   SpriteRenderer.prototype.drawCamDriver = function(ctx, cx, cy, crankRadius, lockRadius, crankAngle, isEngaged) {
-    lockRadius = lockRadius || (crankRadius * 0.5);
+    lockRadius = lockRadius || 40;
 
     ctx.save();
     ctx.translate(cx, cy);
 
     // 1. Base mounting disc
     ctx.beginPath();
-    ctx.arc(0, 0, lockRadius + 8, 0, Math.PI * 2);
-    ctx.fillStyle = '#cbd5e1';
+    ctx.arc(0, 0, lockRadius + 6, 0, Math.PI * 2);
+    ctx.fillStyle = '#e2e8f0';
     ctx.fill();
     ctx.lineWidth = 1.5;
-    ctx.strokeStyle = '#475569';
+    ctx.strokeStyle = '#64748b';
     ctx.stroke();
 
-    // 2. Rotating locking collar and crank arm
+    // 2. Rotating locking collar disc with crescent clearance scallop and crank arm
     ctx.save();
     ctx.rotate(crankAngle);
 
+    // Crescent locking disc (dwell lock collar):
+    // Circular disc of radius lockRadius with a circular clearance scallop where crank pin is located
     ctx.beginPath();
-    ctx.arc(0, 0, lockRadius, 0.75, Math.PI * 2 - 0.75);
-    ctx.lineWidth = 6;
-    ctx.strokeStyle = '#64748b';
+    var scallopR = crankRadius * 0.45;
+    var scallopDist = crankRadius * 0.65;
+    var scallopA = Math.asin(Math.min(0.95, scallopR / lockRadius));
+    ctx.arc(0, 0, lockRadius, scallopA, Math.PI * 2 - scallopA, false);
+    ctx.arc(scallopDist, 0, scallopR, Math.PI - 0.7, Math.PI + 0.7, true);
+    ctx.closePath();
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#334155';
     ctx.stroke();
 
     // Crank arm
     ctx.beginPath();
-    ctx.moveTo(0, -7);
-    ctx.lineTo(crankRadius, -5);
-    ctx.arc(crankRadius, 0, 8, -Math.PI / 2, Math.PI / 2);
-    ctx.lineTo(0, 7);
+    ctx.moveTo(0, -9);
+    ctx.lineTo(crankRadius, -6);
+    ctx.arc(crankRadius, 0, 9, -Math.PI / 2, Math.PI / 2);
+    ctx.lineTo(0, 9);
     ctx.closePath();
     ctx.fillStyle = '#475569';
     ctx.fill();
@@ -619,7 +608,7 @@
     ctx.strokeStyle = '#1e293b';
     ctx.stroke();
 
-    // Drive crank pin
+    // Drive crank pin (roller)
     ctx.beginPath();
     ctx.arc(crankRadius, 0, 5.5, 0, Math.PI * 2);
     ctx.fillStyle = isEngaged ? '#ef4444' : '#f59e0b';

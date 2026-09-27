@@ -214,10 +214,94 @@
           }
           return maxDist > 0 ? maxDist : baseRadius;
 
+        case 'geneva':
+          var gSlots = options.slots || 4;
+          var gCenterDist = options.centerDistance || (baseRadius * Math.SQRT2);
+          var gSlotWidth = options.slotWidth || (baseRadius * 0.13);
+          var genevaPts = Math2D.getGenevaPoints(gSlots, baseRadius, gCenterDist, gSlotWidth, options);
+          return Math2D.getCamRadius('custom', theta, baseRadius, lift, { points: genevaPts });
+
         case 'circle':
         default:
           return baseRadius;
       }
+    },
+
+    /**
+     * Compute mathematically exact 2D vector polygon of a Maltese cross / Geneva wheel.
+     */
+    getGenevaPoints: function(slots, radius, centerDistance, slotWidth, options) {
+      slots = slots || 4;
+      radius = radius || 84.85;
+      centerDistance = centerDistance || (radius * Math.SQRT2);
+      slotWidth = slotWidth || 11;
+      options = options || {};
+
+      var halfW = slotWidth * 0.5;
+      var dTheta = (Math.PI * 2) / slots;
+
+      var crankRadius = centerDistance * Math.sin(Math.PI / slots);
+      var slotDepth = crankRadius + radius - centerDistance;
+      if (slotDepth <= 0) slotDepth = radius * 0.55;
+      var slotBottomR = Math.max(radius * 0.25, radius - slotDepth);
+
+      var pts = [];
+
+      for (var k = 0; k < slots; k++) {
+        var phi = k * dTheta;
+        var ux = Math.cos(phi), uy = Math.sin(phi);
+        var nx = -uy, ny = ux;
+
+        // 1. Enter slot at trailing wall
+        pts.push([Math.round((radius * ux - halfW * nx) * 10) / 10, Math.round((radius * uy - halfW * ny) * 10) / 10]);
+
+        // 2. Down to bottom of slot
+        pts.push([Math.round((slotBottomR * ux - halfW * nx) * 10) / 10, Math.round((slotBottomR * uy - halfW * ny) * 10) / 10]);
+
+        // 3. Semicircular bottom arc
+        var numArcSteps = 6;
+        for (var a = 1; a < numArcSteps; a++) {
+          var alpha = -Math.PI / 2 + (a / numArcSteps) * Math.PI;
+          var du = -halfW * Math.cos(alpha);
+          var dn = halfW * Math.sin(alpha);
+          var bx = slotBottomR * ux + du * ux + dn * nx;
+          var by = slotBottomR * uy + du * uy + dn * ny;
+          pts.push([Math.round(bx * 10) / 10, Math.round(by * 10) / 10]);
+        }
+
+        // 4. Up leading wall to exit
+        pts.push([Math.round((slotBottomR * ux + halfW * nx) * 10) / 10, Math.round((slotBottomR * uy + halfW * ny) * 10) / 10]);
+        pts.push([Math.round((radius * ux + halfW * nx) * 10) / 10, Math.round((radius * uy + halfW * ny) * 10) / 10]);
+
+        // 5. Exact concave circular locking cutout between slot k and slot k+1
+        var midA = phi + dTheta * 0.5;
+        var arcCx = centerDistance * Math.cos(midA);
+        var arcCy = centerDistance * Math.sin(midA);
+        var pExitX = radius * ux + halfW * nx;
+        var pExitY = radius * uy + halfW * ny;
+        var rCutout = Math.hypot(pExitX - arcCx, pExitY - arcCy);
+
+        var nextPhi = (k + 1) * dTheta;
+        var nextUx = Math.cos(nextPhi), nextUy = Math.sin(nextPhi);
+        var nextNx = -nextUy, nextNy = nextUx;
+        var pNextEnterX = radius * nextUx - halfW * nextNx;
+        var pNextEnterY = radius * nextUy - halfW * nextNy;
+
+        var aStart = Math.atan2(pExitY - arcCy, pExitX - arcCx);
+        var aEnd = Math.atan2(pNextEnterY - arcCy, pNextEnterX - arcCx);
+        var dArc = aEnd - aStart;
+        while (dArc < -Math.PI) dArc += Math.PI * 2;
+        while (dArc > Math.PI) dArc -= Math.PI * 2;
+
+        var numCutoutSteps = 8;
+        for (var c = 1; c < numCutoutSteps; c++) {
+          var curA = aStart + dArc * (c / numCutoutSteps);
+          var px = arcCx + rCutout * Math.cos(curA);
+          var py = arcCy + rCutout * Math.sin(curA);
+          pts.push([Math.round(px * 10) / 10, Math.round(py * 10) / 10]);
+        }
+      }
+      return pts;
     },
 
     /**
@@ -227,6 +311,12 @@
       options = options || {};
       if (profileType === 'custom' && options.points && options.points.length >= 3) {
         return options.points;
+      }
+      if (profileType === 'geneva') {
+        var gSlots = options.slots || 4;
+        var gCenterDist = options.centerDistance || (baseRadius * Math.SQRT2);
+        var gSlotWidth = options.slotWidth || (baseRadius * 0.13);
+        return Math2D.getGenevaPoints(gSlots, baseRadius, gCenterDist, gSlotWidth, options);
       }
       numPoints = numPoints || 72;
       var pts = [];

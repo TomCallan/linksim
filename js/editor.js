@@ -1346,8 +1346,9 @@
         var crankA = Math.atan2(p.y - c1.y, p.x - c1.x);
         var genAngle = (simPhysics && this.mode === 'simulate') ? gen.angle : (gen.angle || 0);
         var isEng = (simPhysics && this.mode === 'simulate') ? gen.isEngaged : false;
+        var centerDist = Math.hypot(c2.x - c1.x, c2.y - c1.y);
         this.renderer.drawCamDriver(ctx, c1.x, c1.y, gen.pinRadius, gen.lockRadius, crankA, isEng);
-        this.renderer.drawGenevaWheel(ctx, c2.x, c2.y, gen.radius, gen.slots, genAngle, gen.lockRadius, gen.slotWidth);
+        this.renderer.drawGenevaWheel(ctx, c2.x, c2.y, gen.radius, gen.slots, genAngle, gen.lockRadius, gen.slotWidth, centerDist);
       }
     }
 
@@ -1803,7 +1804,7 @@
       sliders: [],
       gears: [],
       genevas: [
-        { driverCenterNode: 0, driverPinNode: 2, genevaCenterNode: 1, slots: 4, radius: 84.85, pinRadius: 84.85, lockRadius: 35.15, slotWidth: 11, angle: 0 }
+        { driverCenterNode: 0, driverPinNode: 2, genevaCenterNode: 1, slots: 4, radius: 84.85, pinRadius: 84.85, lockRadius: 40, slotWidth: 11, angle: 0 }
       ],
       motors: [
         { centerNode: 0, crankNode: 2, speed: 3.0 }

@@ -93,11 +93,11 @@
   function handleResize() {
     var header = document.querySelector('header');
     var playbackBar = document.querySelector('.playback-bar');
-    var headerH = header ? header.offsetHeight : 52;
-    var barH = playbackBar ? playbackBar.offsetHeight : 56;
+    var headerH = header ? header.offsetHeight : 48;
+    var barH = playbackBar ? playbackBar.offsetHeight : 52;
 
     var availW = window.innerWidth;
-    var availH = Math.max(300, window.innerHeight - headerH - barH);
+    var availH = Math.max(200, window.innerHeight - headerH - barH);
 
     canvas.width = availW;
     canvas.height = availH;
@@ -127,6 +127,7 @@
       timeline.play();
     }
     hideContextMenu();
+    handleResize();
     editor.render(physics);
   }
 
@@ -974,7 +975,9 @@
       rBase = parseFloat(rBase) || 35;
       lift = parseFloat(lift) || 25;
       var pts = [];
-      if (preset === 'pear') {
+      if (preset === 'geneva') {
+        pts = Math2D.getGenevaPoints(4, rBase + lift * 0.4, (rBase + lift * 0.4) * Math.SQRT2, 11);
+      } else if (preset === 'pear') {
         pts = Math2D.getCamPoints('pear', rBase, lift, 72, { lobeAngle: 65 });
       } else if (preset === 'heart') {
         pts = Math2D.getCamPoints('heart', rBase, lift, 72);

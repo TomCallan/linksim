@@ -9,6 +9,8 @@
     * { box-sizing: border-box; }
     html, body {
       height: 100vh;
+      width: 100vw;
+      max-width: 100vw;
       overflow: hidden;
       margin: 0;
       padding: 0;
@@ -19,25 +21,39 @@
       flex-direction: column;
     }
     header {
-      height: 52px;
-      min-height: 52px;
+      height: 48px;
+      min-height: 48px;
+      max-width: 100vw;
+      width: 100%;
+      box-sizing: border-box;
       display: flex;
-      justify-content: space-between;
       align-items: center;
-      padding: 0 16px;
+      padding: 0 10px;
       background: #ffffff;
       border-bottom: 1px solid #e2e8f0;
       z-index: 10;
-      gap: 12px;
+      gap: 6px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-width: thin;
+      flex-shrink: 0;
+    }
+    header::-webkit-scrollbar {
+      height: 3px;
+    }
+    header::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 2px;
     }
     .brand {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
+      flex-shrink: 0;
     }
     h1 {
       margin: 0;
-      font-size: 1.25rem;
+      font-size: 1.15rem;
       font-weight: 700;
       letter-spacing: -0.02em;
     }
@@ -55,13 +71,14 @@
       border-radius: 6px;
       padding: 2px;
       gap: 2px;
+      flex-shrink: 0;
     }
     .mode-btn {
       border: none;
       background: transparent;
-      font-size: 0.8rem;
+      font-size: 0.78rem;
       font-weight: 600;
-      padding: 5px 12px;
+      padding: 4px 10px;
       border-radius: 4px;
       cursor: pointer;
       color: #475569;
@@ -75,7 +92,25 @@
     .toolbar {
       display: flex;
       align-items: center;
-      gap: 5px;
+      gap: 3px;
+      flex-shrink: 0;
+    }
+    .toolbar button {
+      padding: 4px 7px;
+      font-size: 0.75rem;
+    }
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+    #presetSelect {
+      max-width: 175px;
+      text-overflow: ellipsis;
+      overflow: hidden;
+      white-space: nowrap;
     }
     button, select {
       font-family: inherit;
@@ -148,15 +183,29 @@
       box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
     .playback-bar {
-      height: 56px;
-      min-height: 56px;
+      height: 52px;
+      min-height: 52px;
+      max-width: 100vw;
+      width: 100%;
+      box-sizing: border-box;
       display: flex;
       align-items: center;
-      padding: 0 16px;
+      padding: 0 10px;
       background: #ffffff;
       border-top: 1px solid #e2e8f0;
-      gap: 12px;
+      gap: 8px;
       z-index: 10;
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-width: thin;
+      flex-shrink: 0;
+    }
+    .playback-bar::-webkit-scrollbar {
+      height: 3px;
+    }
+    .playback-bar::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 2px;
     }
     .playback-controls {
       display: flex;
@@ -291,7 +340,7 @@
     <button data-tool="delete" class="btn-danger" title="Delete element (X)">Delete</button>
   </div>
 
-  <div style="display:flex; align-items:center; gap:8px; margin-left:auto;">
+  <div class="header-right">
     <button id="btnUndo" title="Undo change (Ctrl+Z)">Undo</button>
     <button id="btnClear" class="btn-danger" title="Clear all">Clear</button>
 
@@ -379,6 +428,7 @@
         <label>Geometry Preset</label>
         <select id="camPresetSelect">
           <option value="pear">Pear / Teardrop Cam</option>
+          <option value="geneva">Geneva Wheel / Maltese Cross</option>
           <option value="trochoid">3-Lobe Trochoid (Wankel)</option>
           <option value="clover">4-Leaf Clover</option>
           <option value="heart">Heart / Cardioid</option>
