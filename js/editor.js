@@ -28,6 +28,7 @@
     this.gears = [];          // [{ centerNode, radius, teeth, meshWith: [] }]
     this.motors = [];         // [{ centerNode, crankNode, speed }]
     this.brackets = [];       // [{ a, b, c, width, color }]
+    this.trackedNodes = new Set(); // Node IDs being tracked for motion paths
 
     // Viewport pan/zoom
     this.panX = canvas.width / 2;
@@ -341,6 +342,10 @@
     this.motors = this.motors.filter(function(m) { return m.centerNode !== id && m.crankNode !== id; });
     this.brackets = this.brackets.filter(function(b) { return b.a !== id && b.b !== id && b.c !== id; });
     this.nodes = this.nodes.filter(function(n) { return n.id !== id; });
+    this.trackedNodes.delete(id);
+    if (this.renderer && this.renderer.traces) {
+      delete this.renderer.traces[id];
+    }
     this._notifyChange();
   };
 
@@ -364,6 +369,10 @@
     this.gears = [];
     this.motors = [];
     this.brackets = [];
+    this.trackedNodes.clear();
+    if (this.renderer) {
+      this.renderer.clearTraces();
+    }
     this.selectedNodeId = -1;
     this.isConnecting = false;
     this._notifyChange();
@@ -816,6 +825,9 @@
       if (pa && pb) {
         var stress = (simPhysics && this.mode === 'simulate') ? rod.stress : 0;
         this.renderer.drawCapsuleLink(ctx, pa.x, pa.y, pb.x, pb.y, rod.width, stress, rod.color);
+        if (this.renderer.showDimensions) {
+          this.renderer.drawDimensionLabel(ctx, pa.x, pa.y, pb.x, pb.y, rod.length);
+        }
       }
     }
 
@@ -849,6 +861,15 @@
         ctx.stroke();
       }
 
+      // Tracked node ring indicator
+      if (this.trackedNodes.has(n.id)) {
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, 11, 0, Math.PI * 2);
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+
       // Hover highlight
       if (n.id === this.hoverNodeId && this.mode === 'edit') {
         ctx.beginPath();
@@ -859,7 +880,19 @@
       }
     }
 
-    // 7. Ghost connection line when dragging to connect
+    // 7. Dynamic velocity vectors in simulate mode
+    if (this.renderer.showVelocities && simPhysics && this.mode === 'simulate') {
+      for (var i = 0; i < nodes.length; i++) {
+        var n = nodes[i];
+        var pos = nodePositions[n.id];
+        var isFixed = simPhysics.isFixed[n.id];
+        if (!isFixed && pos) {
+          this.renderer.drawVelocityVector(ctx, pos.x, pos.y, simPhysics.vx[n.id], simPhysics.vy[n.id]);
+        }
+      }
+    }
+
+    // 8. Ghost connection line when dragging to connect
     if (this.isConnecting && this.connectStartNode !== -1) {
       var pStart = nodePositions[this.connectStartNode];
       if (pStart) {
@@ -881,6 +914,21 @@
     }
 
     ctx.restore();
+
+    // 9. Physical SI scale ruler
+    this.renderer.drawScaleRuler(ctx, this.canvas.width, this.canvas.height, this.zoom);
+  };
+
+  MechanismEditor.prototype.toggleTrackNode = function(nodeId) {
+    if (this.trackedNodes.has(nodeId)) {
+      this.trackedNodes.delete(nodeId);
+      if (this.renderer && this.renderer.traces) {
+        delete this.renderer.traces[nodeId];
+      }
+    } else {
+      this.trackedNodes.add(nodeId);
+    }
+    this.render();
   };
 
   MechanismEditor.prototype._drawGrid = function(ctx) {

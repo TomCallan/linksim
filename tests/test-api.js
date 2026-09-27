@@ -94,4 +94,35 @@ console.log('Running Linksim Programmatic API & Materials Test Suite...');
   console.log('PASS: getState() returns full telemetry data');
 }
 
+// Test 5: Analysis tools & Trace options
+{
+  const SpriteRenderer = require('../js/sprites.js');
+  const sim = new PhysicsSystem();
+  const tl = new Timeline(sim);
+  const renderer = new SpriteRenderer();
+  const api = LinksimAPI.init(null, sim, tl, renderer);
+
+  api.setAnalysisOptions({
+    dimensions: true,
+    velocities: true,
+    traces: true,
+    unitScale: 2.0
+  });
+
+  assert.strictEqual(renderer.showDimensions, true);
+  assert.strictEqual(renderer.showVelocities, true);
+  assert.strictEqual(renderer.showTraces, true);
+  assert.strictEqual(renderer.unitScale, 2.0);
+
+  renderer.recordTrace(1, 10, 20);
+  renderer.recordTrace(1, 12, 25);
+  const traces = api.getTraces();
+  assert.strictEqual(traces[1].length, 2);
+
+  api.clearTraces();
+  assert.strictEqual(Object.keys(api.getTraces()).length, 0);
+
+  console.log('PASS: Analysis tools configuration and trace recording via API');
+}
+
 console.log('All API & Material tests passed successfully!');

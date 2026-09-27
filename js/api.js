@@ -193,6 +193,40 @@
 
       getMaterials: function() {
         return (physics && physics.constructor.Materials) || {};
+      },
+
+      trackNode: function(nodeId) {
+        if (editor) editor.toggleTrackNode(nodeId);
+      },
+
+      untrackNode: function(nodeId) {
+        if (editor && editor.trackedNodes.has(nodeId)) {
+          editor.toggleTrackNode(nodeId);
+        }
+      },
+
+      clearTraces: function() {
+        if (renderer) renderer.clearTraces();
+        if (editor && editor.renderer) editor.renderer.clearTraces();
+      },
+
+      getTraces: function() {
+        if (renderer) return renderer.traces;
+        if (editor && editor.renderer) return editor.renderer.traces;
+        return {};
+      },
+
+      setAnalysisOptions: function(opts) {
+        if (!opts) return;
+        var r = renderer || (editor && editor.renderer);
+        if (r) {
+          if (typeof opts.dimensions === 'boolean') r.showDimensions = opts.dimensions;
+          if (typeof opts.velocities === 'boolean') r.showVelocities = opts.velocities;
+          if (typeof opts.stress === 'boolean') r.showStress = opts.stress;
+          if (typeof opts.traces === 'boolean') r.showTraces = opts.traces;
+          if (typeof opts.unitScale === 'number') r.unitScale = opts.unitScale;
+        }
+        if (editor) editor.render(physics);
       }
     };
 

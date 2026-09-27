@@ -12,10 +12,23 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function() {
   'use strict';
 
+  var TrackColors = [
+    'rgba(239, 68, 68, 0.85)',   // Red
+    'rgba(6, 182, 212, 0.85)',   // Cyan
+    'rgba(139, 92, 246, 0.85)',  // Purple
+    'rgba(16, 185, 129, 0.85)',  // Emerald
+    'rgba(245, 158, 11, 0.85)',  // Amber
+    'rgba(236, 72, 153, 0.85)',  // Pink
+    'rgba(59, 130, 246, 0.85)'   // Blue
+  ];
+
   function SpriteRenderer() {
     this.showStress = true;
     this.showTraces = true;
-    this.maxTracePoints = 120;
+    this.showDimensions = false;
+    this.showVelocities = false;
+    this.unitScale = 1.0; // 1 pixel = 1 mm
+    this.maxTracePoints = 300;
     this.traces = {}; // nodeId -> [{x, y}]
     this.gearPathCache = {}; // key -> Path2D
   }
@@ -416,7 +429,7 @@
   };
 
   /**
-   * Render coupler curve traces for tracked nodes.
+   * Render coupler curve traces for tracked nodes with distinct node colors.
    */
   SpriteRenderer.prototype.drawTracePaths = function(ctx) {
     if (!this.showTraces) return;
@@ -424,17 +437,117 @@
     for (var id in this.traces) {
       var pts = this.traces[id];
       if (pts.length < 2) continue;
+      var color = TrackColors[parseInt(id, 10) % TrackColors.length] || 'rgba(239, 68, 68, 0.85)';
       ctx.beginPath();
       ctx.moveTo(pts[0].x, pts[0].y);
       for (var i = 1; i < pts.length; i++) {
         ctx.lineTo(pts[i].x, pts[i].y);
       }
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = 'rgba(239, 68, 68, 0.7)';
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = color;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       ctx.stroke();
     }
+    ctx.restore();
+  };
+
+  /**
+   * Render dynamic velocity vector arrow indicating speed and direction.
+   */
+  SpriteRenderer.prototype.drawVelocityVector = function(ctx, x, y, vx, vy) {
+    var speed = Math.hypot(vx, vy);
+    if (speed < 1.0) return;
+
+    var scale = 0.15; // arrow scaling
+    var arrowLen = Math.min(60, speed * scale);
+    var angle = Math.atan2(vy, vx);
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(arrowLen, 0);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#0284c7';
+    ctx.stroke();
+
+    // Arrow head
+    ctx.beginPath();
+    ctx.moveTo(arrowLen, 0);
+    ctx.lineTo(arrowLen - 6, -4);
+    ctx.lineTo(arrowLen - 6, 4);
+    ctx.closePath();
+    ctx.fillStyle = '#0284c7';
+    ctx.fill();
+
+    // Speed badge (mm/s)
+    ctx.rotate(-angle);
+    ctx.font = '9px monospace';
+    ctx.fillStyle = '#0369a1';
+    ctx.fillText(Math.round(speed) + ' mm/s', arrowLen * Math.cos(angle) + 4, arrowLen * Math.sin(angle) - 4);
+
+    ctx.restore();
+  };
+
+  /**
+   * Render link physical dimension label in SI millimeters.
+   */
+  SpriteRenderer.prototype.drawDimensionLabel = function(ctx, x1, y1, x2, y2, lengthMm) {
+    var midX = (x1 + x2) / 2;
+    var midY = (y1 + y2) / 2;
+    var text = (lengthMm * this.unitScale).toFixed(1) + ' mm';
+
+    ctx.save();
+    ctx.font = '10px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    var textW = ctx.measureText(text).width;
+
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.fillRect(midX - textW / 2 - 3, midY - 7, textW + 6, 14);
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(midX - textW / 2 - 3, midY - 7, textW + 6, 14);
+
+    ctx.fillStyle = '#1e293b';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, midX, midY);
+    ctx.restore();
+  };
+
+  /**
+   * Render physical SI engineering scale ruler on canvas.
+   */
+  SpriteRenderer.prototype.drawScaleRuler = function(ctx, canvasWidth, canvasHeight, zoom) {
+    // Determine reasonable bar length in mm: 10, 20, 50, 100, 200, 500 mm
+    var targetPixelW = 100;
+    var rawMm = targetPixelW / (zoom * this.unitScale);
+    var stepOptions = [5, 10, 20, 50, 100, 200, 500];
+    var bestMm = stepOptions[0];
+    for (var i = 0; i < stepOptions.length; i++) {
+      if (stepOptions[i] <= rawMm * 1.5) bestMm = stepOptions[i];
+    }
+
+    var barPixelW = bestMm * zoom * this.unitScale;
+    var marginX = 20;
+    var marginY = canvasHeight - 20;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(marginX, marginY - 6);
+    ctx.lineTo(marginX, marginY);
+    ctx.lineTo(marginX + barPixelW, marginY);
+    ctx.lineTo(marginX + barPixelW, marginY - 6);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#475569';
+    ctx.stroke();
+
+    ctx.font = '10px monospace';
+    ctx.fillStyle = '#334155';
+    ctx.textAlign = 'center';
+    ctx.fillText(bestMm + ' mm', marginX + barPixelW / 2, marginY - 8);
     ctx.restore();
   };
 

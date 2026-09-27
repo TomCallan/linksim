@@ -28,11 +28,11 @@
 
     physics = new PhysicsSystem();
     timeline = new Timeline(physics);
-    renderer = new SpriteRenderer();
 
     editor = new MechanismEditor(canvas, function(modelJSON) {
       loadModelIntoPhysics(modelJSON);
     });
+    renderer = editor.renderer;
 
     // Wire Direct Physics Interactions
     editor.onDirectDragNode = function(nodeId, x, y) {
@@ -282,6 +282,23 @@
       traceToggle.addEventListener('change', function(e) {
         renderer.showTraces = e.target.checked;
         editor.renderer.showTraces = e.target.checked;
+        editor.render(physics);
+      });
+    }
+
+    var dimToggle = document.getElementById('toggleDimensions');
+    if (dimToggle) {
+      dimToggle.addEventListener('change', function(e) {
+        editor.renderer.showDimensions = e.target.checked;
+        editor.render(physics);
+      });
+    }
+
+    var velToggle = document.getElementById('toggleVelocities');
+    if (velToggle) {
+      velToggle.addEventListener('change', function(e) {
+        editor.renderer.showVelocities = e.target.checked;
+        editor.render(physics);
       });
     }
 
@@ -366,6 +383,10 @@
       items.push({
         label: 'Configure Node...',
         action: function() { openInspector('node', n); }
+      });
+      items.push({
+        label: editor.trackedNodes.has(n.id) ? 'Untrack Motion Trail' : 'Track Motion Path Trail',
+        action: function() { editor.toggleTrackNode(n.id); }
       });
       items.push({
         label: n.fixed ? 'Free Joint (Unanchor)' : 'Anchor Ground Pin',
@@ -455,6 +476,10 @@
           var s = editor.addNode(pos.x, pos.y, false);
           editor.addSlider(s, a, b);
         }
+      });
+      items.push({
+        label: 'Clear All Motion Trails',
+        action: function() { editor.renderer.clearTraces(); editor.render(physics); }
       });
     }
 
@@ -586,8 +611,16 @@
 
       // Record motion trace
       if (physics.numNodes > 0 && timeline.isPlaying) {
-        var trackNode = physics.numNodes - 1;
-        renderer.recordTrace(trackNode, physics.x[trackNode], physics.y[trackNode]);
+        if (editor.trackedNodes.size > 0) {
+          editor.trackedNodes.forEach(function(nodeId) {
+            if (nodeId < physics.numNodes) {
+              renderer.recordTrace(nodeId, physics.x[nodeId], physics.y[nodeId]);
+            }
+          });
+        } else {
+          var trackNode = physics.numNodes - 1;
+          renderer.recordTrace(trackNode, physics.x[trackNode], physics.y[trackNode]);
+        }
       }
     }
 
