@@ -35,16 +35,20 @@
     renderer = editor.renderer;
 
     // Wire Direct Physics Interactions
+    editor.onHumanInputStart = function(type, id) {
+      timeline.onHumanInputStart(type, id);
+    };
     editor.onDirectDragNode = function(nodeId, x, y) {
       physics.setMouseDrag(nodeId, x, y);
-      timeline.invalidateLoop();
+      timeline.derail('user_drag_node');
     };
     editor.onDirectDragRelease = function() {
       physics.clearMouseDrag();
+      timeline.onHumanInputEnd();
     };
     editor.onManualRotateGear = function(gearIdx, deltaAngle) {
       physics.rotateGearManual(gearIdx, deltaAngle);
-      timeline.invalidateLoop();
+      timeline.derail('user_rotate_gear');
     };
 
     // Wire Context Menu
@@ -346,11 +350,33 @@
     var loopBadge = document.getElementById('loopBadge');
     timeline.onLoopStatusChanged = function(info) {
       if (loopBadge) {
-        if (info.detected && info.caching) {
+        if (info.isHumanInteracting) {
           loopBadge.style.display = 'inline-block';
+          loopBadge.style.background = '#fffbeb';
+          loopBadge.style.color = '#b45309';
+          loopBadge.style.border = '1px solid #fde68a';
+          loopBadge.title = 'User interaction derailed loop cache. Live XPBD physics running.';
+          loopBadge.textContent = 'Derailed by User Input (Live Physics)';
+        } else if (info.isDerailed && !info.detected) {
+          loopBadge.style.display = 'inline-block';
+          loopBadge.style.background = '#fef3c7';
+          loopBadge.style.color = '#92400e';
+          loopBadge.style.border = '1px solid #fcd34d';
+          loopBadge.title = 'Mechanism disturbed. Live physics running until new periodic cycle is established.';
+          loopBadge.textContent = 'Live Physics (Searching for Loop...)';
+        } else if (info.detected && info.caching) {
+          loopBadge.style.display = 'inline-block';
+          loopBadge.style.background = '#ecfdf5';
+          loopBadge.style.color = '#047857';
+          loopBadge.style.border = '1px solid #a7f3d0';
+          loopBadge.title = 'Periodic loop detected: simulation is running from precomputed frame buffer';
           loopBadge.textContent = 'Loop Cached (' + info.period + 'f / ' + info.duration.toFixed(1) + 's)';
         } else if (info.detected && !info.caching) {
           loopBadge.style.display = 'inline-block';
+          loopBadge.style.background = '#eff6ff';
+          loopBadge.style.color = '#1d4ed8';
+          loopBadge.style.border = '1px solid #bfdbfe';
+          loopBadge.title = 'Periodic loop detected, caching disabled';
           loopBadge.textContent = 'Loop Detected (' + info.period + 'f)';
         } else {
           loopBadge.style.display = 'none';

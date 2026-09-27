@@ -32,12 +32,18 @@
     this.loopPeriod = 0;
     this.loopDuration = 0;
     this.isLoopPlayingFromCache = false;
+    this.isHumanInteracting = false;
+    this.isDerailed = false;
+    this.loopSearchMinIndex = 0;
     this.onLoopStatusChanged = null; // callback(loopInfo)
   }
 
   Timeline.prototype.reset = function() {
     this.history = [];
     this.currentIndex = -1;
+    this.isHumanInteracting = false;
+    this.isDerailed = false;
+    this.loopSearchMinIndex = 0;
     this.invalidateLoop();
     this.recordInitialFrame();
     if (this.onFrameChanged) {
@@ -57,6 +63,35 @@
     }
   };
 
+  Timeline.prototype.derail = function(reason) {
+    this.loopDetected = false;
+    this.isLoopPlayingFromCache = false;
+    this.isDerailed = true;
+    this.loopStart = -1;
+    this.loopEnd = -1;
+    this.loopPeriod = 0;
+    this.loopDuration = 0;
+    if (this.currentIndex < this.history.length - 1) {
+      this.history.length = this.currentIndex + 1;
+    }
+    if (this.onLoopStatusChanged) {
+      this.onLoopStatusChanged(this.getLoopInfo());
+    }
+  };
+
+  Timeline.prototype.onHumanInputStart = function(type, id) {
+    this.isHumanInteracting = true;
+    this.derail(type ? ('human_' + type) : 'human_input');
+  };
+
+  Timeline.prototype.onHumanInputEnd = function() {
+    this.isHumanInteracting = false;
+    this.loopSearchMinIndex = Math.max(0, this.history.length);
+    if (this.onLoopStatusChanged) {
+      this.onLoopStatusChanged(this.getLoopInfo());
+    }
+  };
+
   Timeline.prototype.getLoopInfo = function() {
     return {
       enabled: this.loopDetectionEnabled,
@@ -66,7 +101,9 @@
       endFrame: this.loopEnd,
       period: this.loopPeriod,
       duration: this.loopDuration,
-      isPlayingFromCache: this.isLoopPlayingFromCache
+      isPlayingFromCache: this.isLoopPlayingFromCache,
+      isHumanInteracting: this.isHumanInteracting,
+      isDerailed: this.isDerailed
     };
   };
 
@@ -88,9 +125,12 @@
 
   Timeline.prototype._checkLoop = function() {
     if (!this.loopDetectionEnabled || this.loopDetected) return;
-    if (this.history.length < 30) return;
+    if (this.isHumanInteracting || (this.physics && this.physics.isUnderHumanInput && this.physics.isUnderHumanInput())) return;
 
+    var minSearch = Math.max(0, this.loopSearchMinIndex || 0);
     var k = this.history.length - 1;
+    if (k - minSearch < 30) return;
+
     var sk = this.history[k];
     var numNodes = sk.numNodes;
     if (numNodes === 0) return;
@@ -116,8 +156,8 @@
     var minPeriod = 20;
     var tolerance = 1.2; // Maximum node position displacement in pixels
 
-    // Compare newest frame k with earlier frames j
-    for (var j = 0; j <= k - minPeriod; j++) {
+    // Compare newest frame k with earlier frames j starting from minSearch
+    for (var j = minSearch; j <= k - minPeriod; j++) {
       var sj = this.history[j];
       if (sj.numNodes !== numNodes) continue;
 
@@ -178,6 +218,7 @@
 
       // Loop verified!
       this.loopDetected = true;
+      this.isDerailed = false;
       this.loopStart = j;
       this.loopEnd = k;
       this.loopPeriod = k - j;
@@ -193,8 +234,16 @@
   Timeline.prototype.update = function(dt) {
     if (!this.isPlaying) return;
 
-    // If loop is detected and loop caching is enabled, play directly from buffer!
-    if (this.loopDetected && this.loopCacheEnabled && this.loopPeriod > 0) {
+    var humanActive = this.isHumanInteracting || (this.physics && this.physics.isUnderHumanInput && this.physics.isUnderHumanInput());
+
+    if (humanActive) {
+      if (this.loopDetected || this.isLoopPlayingFromCache) {
+        this.derail('human_input_active');
+      }
+    }
+
+    // If loop is detected and loop caching is enabled and NOT under human interaction, play directly from buffer!
+    if (!humanActive && this.loopDetected && this.loopCacheEnabled && this.loopPeriod > 0) {
       this.isLoopPlayingFromCache = true;
 
       // Advance currentIndex inside the closed loop
@@ -233,12 +282,17 @@
         this.loopStart = Math.max(0, this.loopStart - 1);
         this.loopEnd = Math.max(0, this.loopEnd - 1);
       }
+      if (this.loopSearchMinIndex > 0) {
+        this.loopSearchMinIndex--;
+      }
     }
     this.history.push(snap);
     this.currentIndex = this.history.length - 1;
 
-    // Check for loop completion
-    this._checkLoop();
+    // Check for loop completion (strictly suppressed during human interaction)
+    if (!humanActive) {
+      this._checkLoop();
+    }
 
     if (this.onFrameChanged) {
       this.onFrameChanged(this.currentIndex, this.history.length, this.isPlaying);
@@ -271,7 +325,12 @@
     dt = dt || (1 / 60);
     this.pause();
 
-    if (this.loopDetected && this.loopCacheEnabled && this.loopPeriod > 0) {
+    var humanActive = this.isHumanInteracting || (this.physics && this.physics.isUnderHumanInput && this.physics.isUnderHumanInput());
+    if (humanActive && (this.loopDetected || this.isLoopPlayingFromCache)) {
+      this.derail('human_input_active');
+    }
+
+    if (!humanActive && this.loopDetected && this.loopCacheEnabled && this.loopPeriod > 0) {
       if (this.currentIndex < this.loopStart || this.currentIndex >= this.loopEnd - 1) {
         this.currentIndex = this.loopStart;
       } else {
@@ -287,10 +346,15 @@
       var snap = this.physics.getSnapshot();
       if (this.history.length >= this.maxFrames) {
         this.history.shift();
+        if (this.loopSearchMinIndex > 0) {
+          this.loopSearchMinIndex--;
+        }
       }
       this.history.push(snap);
       this.currentIndex = this.history.length - 1;
-      this._checkLoop();
+      if (!humanActive) {
+        this._checkLoop();
+      }
     }
 
     if (this.onFrameChanged) {

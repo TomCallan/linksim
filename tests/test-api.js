@@ -320,4 +320,49 @@ console.log('Running Linksim Programmatic API & Materials Test Suite...');
   console.log('PASS: Pin Simplification toggle and Universal Element Selection/Deletion');
 }
 
+// Test 11: LinksimAPI human perturbation simulation (dragNode, releaseDrag, derailLoop)
+{
+  const sim = new PhysicsSystem();
+  const tl = new Timeline(sim);
+  const api = LinksimAPI.init(null, sim, tl, null);
+
+  api.build({
+    nodes: [
+      { x: 0, y: 0, fixed: true },
+      { x: 50, y: 0, fixed: false }
+    ],
+    rods: [
+      { a: 0, b: 1, length: 50 }
+    ],
+    motors: [
+      { centerNode: 0, crankNode: 1, speed: 2.0 }
+    ]
+  });
+
+  // Step until loop detected
+  for (let f = 0; f < 250; f++) {
+    api.step(1 / 60);
+    if (api.getLoopInfo().detected) break;
+  }
+  assert.strictEqual(api.getLoopInfo().detected, true);
+
+  // Derail via API dragNode
+  api.dragNode(1, 100, 0);
+  const loopInfoDuring = api.getLoopInfo();
+  assert.strictEqual(loopInfoDuring.detected, false);
+  assert.strictEqual(loopInfoDuring.isHumanInteracting, true);
+  assert.strictEqual(loopInfoDuring.isDerailed, true);
+
+  // Step during drag
+  api.step(1 / 60);
+  assert.strictEqual(api.getLoopInfo().detected, false);
+
+  // Release drag
+  api.releaseDrag();
+  const loopInfoAfter = api.getLoopInfo();
+  assert.strictEqual(loopInfoAfter.isHumanInteracting, false);
+
+  console.log('PASS: LinksimAPI dragNode, releaseDrag, and derailLoop');
+}
+
 console.log('All API & Material tests passed successfully!');

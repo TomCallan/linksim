@@ -64,6 +64,7 @@
     this.mouseDragNode = -1;
     this.mouseDragX = 0;
     this.mouseDragY = 0;
+    this.isManualInteracting = false;
 
     // Simulation settings
     this.gravityX = 0;
@@ -109,6 +110,7 @@
     this.attachedCamNodes = [];
     this.springs = [];
     this.mouseDragNode = -1;
+    this.isManualInteracting = false;
     this.time = 0;
   };
 
@@ -481,17 +483,24 @@
     return motor;
   };
 
+  PhysicsSystem.prototype.isUnderHumanInput = function() {
+    return this.mouseDragNode !== -1 || !!this.isManualInteracting;
+  };
+
   PhysicsSystem.prototype.setMouseDrag = function(nodeId, x, y) {
     this.mouseDragNode = nodeId;
     this.mouseDragX = x;
     this.mouseDragY = y;
+    this.isManualInteracting = true;
   };
 
   PhysicsSystem.prototype.clearMouseDrag = function() {
     this.mouseDragNode = -1;
+    this.isManualInteracting = false;
   };
 
   PhysicsSystem.prototype.rotateGearManual = function(gearIdx, deltaAngle) {
+    this.isManualInteracting = true;
     var gear = this.gears[gearIdx];
     if (!gear) return;
     gear.angle += deltaAngle;

@@ -375,4 +375,68 @@ console.log('Running Linksim Physics & Timeline Test Suite...');
   console.log('PASS: Custom Vector Polygon Cam Profile & Follower XPBD Push');
 }
 
+// Test 16: Human input derails loop cache playback, runs live physics, suppresses loop detection during drag, and only re-establishes loop after release
+{
+  const sim = new PhysicsSystem();
+  const tl = new Timeline(sim);
+
+  const c = sim.addNode(-100, 0, true);
+  const cr = sim.addNode(-60, 0, false);
+  const piston = sim.addNode(70, 0, false);
+  const railA = sim.addNode(0, 0, true);
+  const railB = sim.addNode(180, 0, true);
+  sim.addRod(c, cr, 40);
+  sim.addRod(cr, piston, 130);
+  sim.addSlider(piston, railA, railB);
+  sim.addMotor(c, cr, 3.5);
+
+  tl.reset();
+
+  // Run simulation frames until loop is detected and cached
+  for (let f = 0; f < 120; f++) {
+    tl.update(1 / 60);
+    if (tl.loopDetected) break;
+  }
+  assert.strictEqual(tl.loopDetected, true, 'Periodic loop not detected');
+  tl.update(1 / 60);
+  assert.strictEqual(tl.isLoopPlayingFromCache, true, 'Timeline is not playing from cache');
+
+  // Human interaction begins: user grabs the piston
+  tl.onHumanInputStart('node', piston);
+  sim.setMouseDrag(piston, 150, 0);
+
+  // Status must immediately reflect derailment and human interaction
+  assert.strictEqual(tl.loopDetected, false, 'Loop was not immediately invalidated on human input');
+  assert.strictEqual(tl.isLoopPlayingFromCache, false, 'Loop playback was not aborted on human input');
+  assert.strictEqual(tl.isDerailed, true, 'Timeline isDerailed is false');
+  assert.strictEqual(tl.isHumanInteracting, true, 'Timeline isHumanInteracting is false');
+
+  // Step while human is dragging: live physics MUST run and drag node must be held
+  for (let f = 0; f < 40; f++) {
+    tl.update(1 / 60);
+    // Loop detection must be strictly suppressed during human input
+    assert.strictEqual(tl.loopDetected, false, 'Loop was erroneously detected during active human input');
+    assert.strictEqual(tl.isLoopPlayingFromCache, false, 'Loop played from cache during human drag');
+  }
+  assert(Math.abs(sim.x[piston] - 150) < 1.0, `Piston was not dragged by human input: x is ${sim.x[piston]}`);
+
+  // User releases node
+  sim.clearMouseDrag();
+  tl.onHumanInputEnd();
+  assert.strictEqual(tl.isHumanInteracting, false, 'isHumanInteracting not false after release');
+  assert(tl.loopSearchMinIndex >= 40, `loopSearchMinIndex did not gate out pre-disturbance history frames: ${tl.loopSearchMinIndex}`);
+  assert.strictEqual(tl.loopSearchMinIndex, tl.history.length, 'loopSearchMinIndex does not match history length at release');
+
+  // Run simulation until the newly perturbed system establishes a fresh post-disturbance loop
+  for (let f = 0; f < 150; f++) {
+    tl.update(1 / 60);
+    if (tl.loopDetected) break;
+  }
+  assert.strictEqual(tl.loopDetected, true, 'New periodic loop was not established after release');
+  assert(tl.loopStart >= tl.loopSearchMinIndex - 1, `Loop origin (${tl.loopStart}) must not use pre-disturbance frames (< ${tl.loopSearchMinIndex})`);
+  assert.strictEqual(tl.isDerailed, false, 'isDerailed was not cleared when new loop was found');
+
+  console.log('PASS: Human input derails loop cache, runs live physics, and recovers cleanly after release');
+}
+
 console.log('All tests passed successfully!');

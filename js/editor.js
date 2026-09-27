@@ -80,6 +80,7 @@
 
     // Context menu callback: fn(x, y, targetType, targetData)
     this.onShowContextMenu = null;
+    this.onHumanInputStart = null;
 
     this._bindEvents();
   }
@@ -859,12 +860,21 @@
             self.isTurningGear = true;
             self.turningGearIdx = nearGear;
             self.prevGearMouseAngle = Math.atan2(w.y - cNode.y, w.x - cNode.x);
+            if (self.onHumanInputStart) {
+              self.onHumanInputStart('gear', nearGear);
+            }
             return;
           }
         }
         if (nearNode !== -1) {
           self.selectedNodeId = nearNode;
           self.isDragging = true;
+          if (self.onHumanInputStart) {
+            self.onHumanInputStart('node', nearNode);
+          }
+          if (self.onDirectDragNode) {
+            self.onDirectDragNode(nearNode, w.x, w.y);
+          }
           return;
         }
         self.isPanning = true;

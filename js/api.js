@@ -397,6 +397,20 @@
 
       invalidateLoop: function() {
         if (timeline) timeline.invalidateLoop();
+      },
+
+      derailLoop: function(reason) {
+        if (timeline) timeline.derail(reason || 'api_derail');
+      },
+
+      dragNode: function(nodeId, x, y) {
+        if (timeline) timeline.onHumanInputStart('node', nodeId);
+        if (physics) physics.setMouseDrag(nodeId, x, y);
+      },
+
+      releaseDrag: function() {
+        if (physics) physics.clearMouseDrag();
+        if (timeline) timeline.onHumanInputEnd();
       }
     };
 
