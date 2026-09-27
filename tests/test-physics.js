@@ -418,7 +418,11 @@ console.log('Running Linksim Physics & Timeline Test Suite...');
     assert.strictEqual(tl.loopDetected, false, 'Loop was erroneously detected during active human input');
     assert.strictEqual(tl.isLoopPlayingFromCache, false, 'Loop played from cache during human drag');
   }
-  assert(Math.abs(sim.x[piston] - 150) < 1.0, `Piston was not dragged by human input: x is ${sim.x[piston]}`);
+
+  // Rod length must remain invariant and piston must stay on rail
+  const dRod = Math2D.dist(sim.x[cr], sim.y[cr], sim.x[piston], sim.y[piston]);
+  assert(Math.abs(dRod - 130) < 0.1, `Connecting rod stretched during human drag: length ${dRod}`);
+  assert(Math.abs(sim.y[piston]) < 0.01, `Piston drifted vertically off rail: y = ${sim.y[piston]}`);
 
   // User releases node
   sim.clearMouseDrag();

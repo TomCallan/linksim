@@ -70,7 +70,7 @@
     this.gravityX = 0;
     this.gravityY = 0; // Linkages typically operate in horizontal plane by default (set to 980 for vertical)
     this.substeps = 30;
-    this.solverIterations = 4;
+    this.solverIterations = 8;
     this.damping = 0.002;
     this.time = 0;
 
@@ -497,6 +497,7 @@
       stalled: false
     };
     this.motors.push(motor);
+    this.invMass[crankNode] = 0.0;
     return motor;
   };
 
@@ -554,11 +555,36 @@
    * Sub-stepped XPBD handles rigidity and high angular velocities gracefully.
    */
   PhysicsSystem.prototype.step = function(dt) {
-    var numSubsteps = this.substeps;
+    var numSubsteps = this.substeps || 30;
+    var solverIters = this.solverIterations || 8;
     var h = dt / numSubsteps;
     var hSq = h * h;
     var invH = 1.0 / h;
     var dampingFactor = Math.pow(1.0 - this.damping, h * 60);
+
+    // Ensure all kinematic nodes have invMass = 0.0
+    for (var ki = 0; ki < this.numNodes; ki++) {
+      if (this.isFixed[ki]) {
+        this.invMass[ki] = 0.0;
+      }
+    }
+    for (var km = 0; km < this.motors.length; km++) {
+      if (this.motors[km].active) {
+        this.invMass[this.motors[km].crankNode] = 0.0;
+      }
+    }
+    for (var kai = 0; kai < this.attachedNodes.length; kai++) {
+      this.invMass[this.attachedNodes[kai].nodeId] = 0.0;
+    }
+    for (var kapi = 0; kapi < this.attachedPulleyNodes.length; kapi++) {
+      this.invMass[this.attachedPulleyNodes[kapi].nodeId] = 0.0;
+    }
+    for (var kaci = 0; kaci < this.attachedCamNodes.length; kaci++) {
+      this.invMass[this.attachedCamNodes[kaci].nodeId] = 0.0;
+    }
+    for (var kagi = 0; kagi < this.attachedGenevaNodes.length; kagi++) {
+      this.invMass[this.attachedGenevaNodes[kagi].nodeId] = 0.0;
+    }
 
     for (var s = 0; s < numSubsteps; s++) {
       // 1. Save previous positions for velocity updates
@@ -780,6 +806,12 @@
           continue;
         }
 
+        // Kinematic nodes (e.g. active motor cranks, gear/geneva attached nodes):
+        // Positions are strictly governed by kinematic trajectories; skip Euler integration.
+        if (this.invMass[i] === 0.0) {
+          continue;
+        }
+
         // Apply external acceleration
         this.vx[i] += this.gravityX * h;
         this.vy[i] += this.gravityY * h;
@@ -790,14 +822,15 @@
         this.y[i] += this.vy[i] * h;
       }
 
-      // Apply mouse dragging target
+      // Apply mouse dragging target attraction
       if (this.mouseDragNode !== -1 && !this.isFixed[this.mouseDragNode]) {
-        this.x[this.mouseDragNode] = this.mouseDragX;
-        this.y[this.mouseDragNode] = this.mouseDragY;
+        var dragAlpha = 0.5;
+        this.x[this.mouseDragNode] += (this.mouseDragX - this.x[this.mouseDragNode]) * dragAlpha;
+        this.y[this.mouseDragNode] += (this.mouseDragY - this.y[this.mouseDragNode]) * dragAlpha;
       }
 
       // 3. Project constraints (Multi-pass Gauss-Seidel XPBD)
-      for (var iter = 0; iter < this.solverIterations; iter++) {
+      for (var iter = 0; iter < solverIters; iter++) {
         // Distance constraints (Rods)
         for (var r = 0; r < this.rods.length; r++) {
           var rod = this.rods[r];
@@ -817,7 +850,9 @@
           rod.stress = Math.abs(deltaC) / rod.length;
 
           var compliance = rod.compliance || 0.0;
-          var factor = deltaC / (dist * (wSum + compliance / hSq));
+          var factor = (compliance === 0.0)
+            ? deltaC / (dist * wSum)
+            : deltaC / (dist * (wSum + compliance / hSq));
           var corrX = dx * factor;
           var corrY = dy * factor;
 
@@ -993,6 +1028,24 @@
         // Reaction force F = -disp / hSq
         var fReactX = -dispX / hSq;
         var fReactY = -dispY / hSq;
+
+        // Direct reaction force from connected springs
+        for (var spi = 0; spi < this.springs.length; spi++) {
+          var spr = this.springs[spi];
+          if (spr.a === motor.crankNode || spr.b === motor.crankNode) {
+            var other = (spr.a === motor.crankNode) ? spr.b : spr.a;
+            var sdx = this.x[other] - idealX;
+            var sdy = this.y[other] - idealY;
+            var sDist = Math.hypot(sdx, sdy);
+            if (sDist > 1e-4) {
+              var sDeltaC = sDist - spr.restLength;
+              var sprF = (spr.stiffness !== undefined ? spr.stiffness : 30) * sDeltaC;
+              fReactX += sprF * (sdx / sDist);
+              fReactY += sprF * (sdy / sDist);
+            }
+          }
+        }
+
         var tauCrank = rx * fReactY - ry * fReactX;
         var tauLoad = (motor.speed * tauCrank < 0) ? Math.abs(tauCrank) : 0;
 
@@ -1023,9 +1076,10 @@
 
         // Check stall condition against maxTorque
         if (motor.maxTorque !== undefined && motor.maxTorque < Infinity) {
-          if (motor.currentTorque >= motor.maxTorque) {
+          if (motor.currentTorque >= motor.maxTorque - 0.5) {
             motor.stalled = true;
             motor.actualSpeed = 0;
+            motor.currentTorque = Math.max(motor.currentTorque, motor.maxTorque);
           } else {
             motor.stalled = false;
             var sf = Math.max(0, 1.0 - (motor.currentTorque / motor.maxTorque));
@@ -1082,10 +1136,6 @@
           this.x[attG.nodeId] = c2x + attG.radius * Math.cos(totAG);
           this.y[attG.nodeId] = c2y + attG.radius * Math.sin(totAG);
         }
-      }
-      if (this.mouseDragNode !== -1 && !this.isFixed[this.mouseDragNode]) {
-        this.x[this.mouseDragNode] = this.mouseDragX;
-        this.y[this.mouseDragNode] = this.mouseDragY;
       }
 
       // 4. Velocity update
