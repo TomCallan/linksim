@@ -227,6 +227,19 @@
           if (typeof opts.unitScale === 'number') r.unitScale = opts.unitScale;
         }
         if (editor) editor.render(physics);
+      },
+
+      getLoopInfo: function() {
+        if (timeline) return timeline.getLoopInfo();
+        return null;
+      },
+
+      enableLoopCache: function(enabled) {
+        if (timeline) timeline.setLoopCacheEnabled(enabled);
+      },
+
+      invalidateLoop: function() {
+        if (timeline) timeline.invalidateLoop();
       }
     };
 

@@ -37,12 +37,14 @@
     // Wire Direct Physics Interactions
     editor.onDirectDragNode = function(nodeId, x, y) {
       physics.setMouseDrag(nodeId, x, y);
+      timeline.invalidateLoop();
     };
     editor.onDirectDragRelease = function() {
       physics.clearMouseDrag();
     };
     editor.onManualRotateGear = function(gearIdx, deltaAngle) {
       physics.rotateGearManual(gearIdx, deltaAngle);
+      timeline.invalidateLoop();
     };
 
     // Wire Context Menu
@@ -266,8 +268,31 @@
     if (gravToggle) {
       gravToggle.addEventListener('change', function(e) {
         physics.gravityY = e.target.checked ? 980 : 0;
+        timeline.invalidateLoop();
       });
     }
+
+    var loopToggle = document.getElementById('toggleLoopCache');
+    if (loopToggle) {
+      loopToggle.addEventListener('change', function(e) {
+        timeline.setLoopCacheEnabled(e.target.checked);
+      });
+    }
+
+    var loopBadge = document.getElementById('loopBadge');
+    timeline.onLoopStatusChanged = function(info) {
+      if (loopBadge) {
+        if (info.detected && info.caching) {
+          loopBadge.style.display = 'inline-block';
+          loopBadge.textContent = 'Loop Cached (' + info.period + 'f / ' + info.duration.toFixed(1) + 's)';
+        } else if (info.detected && !info.caching) {
+          loopBadge.style.display = 'inline-block';
+          loopBadge.textContent = 'Loop Detected (' + info.period + 'f)';
+        } else {
+          loopBadge.style.display = 'none';
+        }
+      }
+    };
 
     var stressToggle = document.getElementById('toggleStress');
     if (stressToggle) {

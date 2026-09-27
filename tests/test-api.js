@@ -125,4 +125,32 @@ console.log('Running Linksim Programmatic API & Materials Test Suite...');
   console.log('PASS: Analysis tools configuration and trace recording via API');
 }
 
+// Test 6: Loop detection & caching API controls
+{
+  const sim = new PhysicsSystem();
+  const tl = new Timeline(sim);
+  const api = LinksimAPI.init(null, sim, tl, null);
+
+  const c = api.addNode(0, 0, true);
+  const cr = api.addNode(40, 0, false);
+  api.addMotor(c, cr, 6.0); // T = 2pi / 6 ~= 1.047s -> ~63 frames
+
+  for (let f = 0; f < 80; f++) {
+    tl.update(1 / 60);
+    if (tl.loopDetected) break;
+  }
+
+  const loopInfo = api.getLoopInfo();
+  assert.strictEqual(loopInfo.detected, true);
+  assert(loopInfo.period >= 60 && loopInfo.period <= 65, `Expected period ~63 frames, got ${loopInfo.period}`);
+
+  api.enableLoopCache(false);
+  assert.strictEqual(api.getLoopInfo().caching, false);
+
+  api.invalidateLoop();
+  assert.strictEqual(api.getLoopInfo().detected, false);
+
+  console.log('PASS: Loop detection & caching API controls');
+}
+
 console.log('All API & Material tests passed successfully!');

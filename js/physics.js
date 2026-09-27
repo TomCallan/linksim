@@ -274,7 +274,13 @@
     var dampingFactor = Math.pow(1.0 - this.damping, h * 60);
 
     for (var s = 0; s < numSubsteps; s++) {
-      // 1. Advance motors
+      // 1. Save previous positions for velocity updates
+      for (var i = 0; i < this.numNodes; i++) {
+        this.x0[i] = this.x[i];
+        this.y0[i] = this.y[i];
+      }
+
+      // 2. Advance motors
       for (var m = 0; m < this.motors.length; m++) {
         var motor = this.motors[m];
         if (!motor.active) continue;
@@ -314,7 +320,7 @@
         }
       }
 
-      // 2. Symplectic Euler integration
+      // 3. Symplectic Euler integration
       for (var i = 0; i < this.numNodes; i++) {
         if (this.isFixed[i]) {
           this.x[i] = this.fixedX[i];
@@ -329,9 +335,6 @@
         this.vy[i] += this.gravityY * h;
         this.vx[i] *= dampingFactor;
         this.vy[i] *= dampingFactor;
-
-        this.x0[i] = this.x[i];
-        this.y0[i] = this.y[i];
 
         this.x[i] += this.vx[i] * h;
         this.y[i] += this.vy[i] * h;
@@ -380,12 +383,12 @@
 
         // Prismatic / Slider constraints
         for (var sl = 0; sl < this.sliders.length; sl++) {
-          var s = this.sliders[sl];
-          var sNode = s.node;
+          var sliderObj = this.sliders[sl];
+          var sNode = sliderObj.node;
           if (this.isFixed[sNode]) continue;
 
-          var aNode = s.aNode;
-          var bNode = s.bNode;
+          var aNode = sliderObj.aNode;
+          var bNode = sliderObj.bNode;
           var ax = this.x[aNode], ay = this.y[aNode];
           var bx = this.x[bNode], by = this.y[bNode];
 
@@ -403,16 +406,16 @@
           var proj = px * ux + py * uy;
 
           // Clamp to stroke limits if configured
-          if (s.minT !== undefined && proj < s.minT) proj = s.minT;
-          if (s.maxT !== undefined && proj > s.maxT) proj = s.maxT;
+          if (sliderObj.minT !== undefined && proj < sliderObj.minT) proj = sliderObj.minT;
+          if (sliderObj.maxT !== undefined && proj > sliderObj.maxT) proj = sliderObj.maxT;
 
           this.x[sNode] = ax + proj * ux;
           this.y[sNode] = ay + proj * uy;
 
           // Slider friction
-          if (s.friction && s.friction > 0) {
-            this.vx[sNode] *= Math.max(0, 1.0 - s.friction * h * 10);
-            this.vy[sNode] *= Math.max(0, 1.0 - s.friction * h * 10);
+          if (sliderObj.friction && sliderObj.friction > 0) {
+            this.vx[sNode] *= Math.max(0, 1.0 - sliderObj.friction * h * 10);
+            this.vy[sNode] *= Math.max(0, 1.0 - sliderObj.friction * h * 10);
           }
         }
       }

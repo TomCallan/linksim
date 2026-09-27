@@ -331,9 +331,11 @@
   <div class="scrubber-wrap">
     <input type="range" id="timeSlider" class="slider" min="0" max="0" value="0">
     <span id="frameInfo" class="frame-info">Frame: 1 / 1</span>
+    <div id="loopBadge" class="badge" style="display:none; background:#ecfdf5; color:#047857; font-size:0.72rem; font-weight:600; padding:2px 8px; border-radius:9999px; border:1px solid #a7f3d0; white-space:nowrap;" title="Periodic loop detected: simulation is running from precomputed frame buffer">Loop Cached</div>
   </div>
 
   <div class="options-bar">
+    <label title="Detect periodic cycles and play from frame cache without physics solving"><input type="checkbox" id="toggleLoopCache" checked> Loop Cache</label>
     <label><input type="checkbox" id="toggleGravity"> Gravity</label>
     <label><input type="checkbox" id="toggleStress" checked> Stress</label>
     <label><input type="checkbox" id="toggleTraces" checked> Traces</label>

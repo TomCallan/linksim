@@ -156,4 +156,43 @@ console.log('Running Linksim Physics & Timeline Test Suite...');
   console.log('PASS: Rigid bracket orthogonal angle lock');
 }
 
+// Test 9: Automatic loop detection & cached playback (e.g. Slider-Crank)
+{
+  const sim = new PhysicsSystem();
+  const tl = new Timeline(sim);
+
+  const c = sim.addNode(-100, 0, true);
+  const cr = sim.addNode(-60, 0, false);
+  const piston = sim.addNode(70, 0, false);
+  const railA = sim.addNode(0, 0, true);
+  const railB = sim.addNode(180, 0, true);
+  sim.addRod(c, cr, 40);
+  sim.addRod(cr, piston, 130);
+  sim.addSlider(piston, railA, railB);
+  sim.addMotor(c, cr, 3.5);
+
+  tl.reset();
+
+  // Run simulation frames until loop is detected
+  for (let f = 0; f < 120; f++) {
+    tl.update(1 / 60);
+    if (tl.loopDetected) break;
+  }
+
+  assert.strictEqual(tl.loopDetected, true, 'Periodic loop was not detected in slider-crank');
+  assert.strictEqual(tl.loopPeriod, 108, `Expected loop period 108 frames, got ${tl.loopPeriod}`);
+  assert.strictEqual(tl.loopStart, 0, `Expected loop start 0, got ${tl.loopStart}`);
+  assert.strictEqual(tl.loopEnd, 108, `Expected loop end 108, got ${tl.loopEnd}`);
+
+  // Now advance timeline beyond frame 108: it should play from cache without stepping physics!
+  tl.update(1 / 60);
+  assert.strictEqual(tl.isLoopPlayingFromCache, true, 'Timeline is not playing from cache after loop detected');
+  assert.strictEqual(tl.currentIndex, 0, 'Loop did not wrap to frame 0 (loopStart) in cached cycle');
+
+  tl.update(1 / 60);
+  assert.strictEqual(tl.currentIndex, 1, 'Loop did not advance to frame 1 in cached cycle');
+
+  console.log('PASS: Automatic loop detection & cached frame buffer playback');
+}
+
 console.log('All tests passed successfully!');
