@@ -40,9 +40,17 @@ linksim/
 - **Mouse Dragging**: User interactions must apply pre-solve target attraction displacement (`dragAlpha = 0.5`) rather than destructive post-solve coordinate overrides. This allows distance and slider constraints to project the dragged node onto valid kinematic manifolds without stretching rods.
 - **Grashof Condition**: When designing 4-bar linkages, ensure link lengths satisfy $S + L \le P + Q$ so continuous rotary motors do not pull against dead-center singularities.
 
+## UI Layout & Reactivity Conventions
+- **No Horizontal Scrollbars**: The top bar (header) and bottom bar (playback and options) must be reactive and adapt gracefully across all viewport widths (from desktop down to 360px mobile). Never introduce horizontal scrollbars to top or bottom bars.
+- **Header Structure**: Brand and Mode Toggle reside in `.header-left`, Blueprint tools in `#editTools`, and utilities in `.header-right`. When space is constrained (<= 1150px), `#editTools` wraps cleanly into a dedicated centered sub-tier with `flex-basis: 100%`.
+- **Playback & Options Bar**: Playback controls and the timeline scrubber occupy the primary row. On viewports <= 1060px, the 7 option toggles wrap into a second tier styled as interactive tactile chips (`:has(input:checked)`), leaving the timeline slider ample width for precise scrubbing.
+- **Dynamic Viewport Height**: Canvas sizing is governed by `handleResize()`, which dynamically computes `window.innerHeight - headerH - barH`. A `ResizeObserver` monitors header and playback-bar size changes in real time so the canvas viewport adapts instantly when bars wrap or expand.
+- **UMD Compatibility**: Browser global scripts evaluate with `module` and `exports` undefined. Never assign directly to `module.exports` inside factory function scopes.
+
 ## Programmatic API (`window.LinksimAPI`)
 Agents can script simulations or create custom automated benchmarks via `window.LinksimAPI`:
 - `LinksimAPI.build(model)`: Declaratively load nodes, rods, gears, sliders, motors, springs, pulleys, belts, cams.
 - `LinksimAPI.play()`, `LinksimAPI.pause()`, `LinksimAPI.step(dt)`: Control simulation state.
 - `LinksimAPI.getState()`: Inspect complete node positions, velocities, rod stresses, and motor torques.
 - `LinksimAPI.dragNode(id, x, y)` & `LinksimAPI.releaseDrag()`: Simulate manual human input.
+

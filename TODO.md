@@ -14,8 +14,10 @@
 - [x] Over-center toggle clamp with bistable snap-action lock.
 - [x] Deterministic 1800-frame cyclic snapshot buffer and periodic loop caching.
 - [x] Programmatic API (`window.LinksimAPI`) for automated testing and AI agent operation.
-- [x] Automated test suite with 61 tests covering physics, rigidity, presets, and API.
+- [x] Automated test suite with 63 tests covering physics, rigidity, presets, API, and responsive UI.
 - [x] Automated deployment via GitHub Pages.
+- [x] Reactive multi-tier layout for top and bottom bars across all viewport widths with zero horizontal scrollbars.
+- [x] Clean browser-scope script loading with complete UMD compatibility.
 
 ## Upcoming Roadmap
 

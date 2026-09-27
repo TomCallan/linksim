@@ -29,6 +29,10 @@ Linksim is a 60+ FPS browser-based 2D mechanical linkage and physics simulator r
   - Frame-by-frame stepping forward and backward.
   - Bidirectional time scrubbing.
   - Automatic periodic loop detection and cached replay.
+- **Reactive Multi-Tier Responsive UI**:
+  - Adaptive header that cleanly wraps the 14 blueprint tools into a centered secondary tier on screens <= 1150px, ensuring every tool remains accessible without clipping.
+  - Two-tier responsive playback and options bar separating playback controls and wide scrubbing slider from interactive tactile toggle chips on screens <= 1060px.
+  - Zero horizontal scrollbars with real-time `ResizeObserver` canvas height auto-fitting.
 - **Programmatic API for AI Agents**: Full headless or browser automation via `window.LinksimAPI`.
 
 ---
