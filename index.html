@@ -438,17 +438,20 @@
 
     <label for="presetSelect" style="font-size:0.75rem; font-weight:500;">Preset:</label>
     <select id="presetSelect">
-      <option value="klann">Klann Walker</option>
-      <option value="sliderCrank">Slider-Crank</option>
+      <option value="fourbar">Four-Bar Linkage</option>
+      <option value="sliderCrank">Slider-Crank Engine</option>
       <option value="chebyshev">Chebyshev Straight-Line</option>
+      <option value="klann">Klann Walker Leg</option>
+      <option value="jansen">Strandbeest Kinetic Leg</option>
       <option value="gearedBellCrank">Geared Bell-Crank</option>
       <option value="gearTrain">Compound Gear Train</option>
-      <option value="geneva">Geneva Mechanism</option>
+      <option value="geneva">Geneva Drive (4-Slot)</option>
       <option value="camFollower">Cam & Valve Follower</option>
-      <option value="beltDrive">Belt Drive & Jackshaft</option>
-      <option value="gearbox">Multi-Speed Gearbox</option>
+      <option value="beltDrive">Belt & Pulley Transmission</option>
+      <option value="gearbox">Interactive Gearbox</option>
       <option value="escapement">Clock Escapement</option>
-      <option value="showcase">Mechanism Showcase</option>
+      <option value="overcenter">Over-Center Toggle Clamp</option>
+      <option value="showcase">Mechanism Gallery</option>
     </select>
     <div id="fpsMeter" class="fps-badge">60 FPS</div>
   </div>
@@ -515,42 +518,60 @@
 
 <!-- Custom Cam Vector Geometry Designer Modal -->
 <div id="camDesignerModal" class="modal-overlay" style="display:none;">
-  <div class="modal-card" style="width: 380px;">
+  <div class="modal-card" style="width: 420px;">
     <div class="modal-header">
       <h3>Custom Vector Cam Designer</h3>
       <button id="btnCamDesignerClose" class="btn-close">&times;</button>
     </div>
     <div class="modal-body">
-      <div class="form-group">
-        <label>Geometry Preset</label>
-        <select id="camPresetSelect">
-          <option value="pear">Pear / Teardrop Cam</option>
-          <option value="geneva">Geneva Wheel / Maltese Cross</option>
-          <option value="trochoid">3-Lobe Trochoid (Wankel)</option>
-          <option value="clover">4-Leaf Clover</option>
-          <option value="heart">Heart / Cardioid</option>
-          <option value="hexagon">Hexagonal Polygon</option>
-          <option value="star">Star Profile</option>
-          <option value="snail">Archimedean Snail Drop</option>
-          <option value="freeform">Freeform Polygon Vertices</option>
-        </select>
-      </div>
-      <div style="display: flex; gap: 8px;">
+      <div style="display: flex; gap: 8px; align-items: flex-end;">
+        <div class="form-group" style="flex: 2;">
+          <label>Shape Preset</label>
+          <select id="camPresetSelect">
+            <option value="pear">Pear / Teardrop Cam</option>
+            <option value="geneva">Geneva Wheel / Maltese Cross</option>
+            <option value="trochoid">3-Lobe Trochoid (Wankel)</option>
+            <option value="clover">4-Leaf Clover</option>
+            <option value="heart">Heart / Cardioid</option>
+            <option value="hexagon">Hexagonal Polygon</option>
+            <option value="star">Star Profile</option>
+            <option value="snail">Archimedean Snail Drop</option>
+            <option value="freeform">Freehand / Custom Drawn</option>
+          </select>
+        </div>
         <div class="form-group" style="flex: 1;">
-          <label>Base Radius</label>
+          <label>Base (R)</label>
           <input type="number" id="camBaseRadius" value="35" min="15" max="120" step="5">
         </div>
         <div class="form-group" style="flex: 1;">
-          <label>Lift / Stroke</label>
+          <label>Lift (h)</label>
           <input type="number" id="camLift" value="25" min="0" max="80" step="5">
         </div>
       </div>
-      <div style="display: flex; justify-content: center; margin: 4px 0; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px;">
-        <canvas id="camPreviewCanvas" width="220" height="150" style="background:#ffffff; border-radius:4px; border:1px solid #cbd5e1;"></canvas>
+
+      <div style="display: flex; gap: 6px; margin: 8px 0 4px 0; justify-content: space-between;">
+        <div style="display: flex; gap: 4px;">
+          <button type="button" id="btnCamDrawMode" style="font-size:0.72rem; padding:3px 7px; background:#2563eb; color:#fff; border-color:#1d4ed8;">Draw / Sculpt</button>
+          <button type="button" id="btnCamVertexMode" style="font-size:0.72rem; padding:3px 7px;">Edit Handles</button>
+        </div>
+        <div style="display: flex; gap: 4px;">
+          <button type="button" id="btnCamSmooth" style="font-size:0.72rem; padding:3px 7px;" title="Smooth contour curves">Smooth</button>
+          <button type="button" id="btnCamAddLobe" style="font-size:0.72rem; padding:3px 7px;" title="Add a peak/lobe">+ Lobe</button>
+          <button type="button" id="btnCamResetCircle" style="font-size:0.72rem; padding:3px 7px;" title="Reset contour to base circle">Circle</button>
+        </div>
       </div>
-      <div class="form-group">
-        <label>Vector Polygon Points (X, Y in mm relative to cam center)</label>
-        <textarea id="camPointsText" rows="3" style="font-family: monospace; font-size: 0.72rem; resize: vertical; padding: 6px; border: 1px solid #cbd5e1; border-radius: 4px;"></textarea>
+
+      <div style="display: flex; flex-direction: column; align-items: center; margin: 4px 0; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px;">
+        <canvas id="camPreviewCanvas" width="340" height="220" style="background:#ffffff; border-radius:4px; border:1px solid #cbd5e1; cursor:crosshair;"></canvas>
+        <div id="camDrawHint" style="font-size:0.68rem; color:#64748b; margin-top:4px; text-align:center;">Click and drag around the center hub to carve custom profile in real time</div>
+      </div>
+
+      <div class="form-group" style="margin-top: 6px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <label style="font-size:0.72rem;">Vector Polygon Points (Auto-Generated)</label>
+          <span id="camVertexCount" style="font-size:0.68rem; color:#64748b;">72 vertices</span>
+        </div>
+        <textarea id="camPointsText" rows="2" style="font-family: monospace; font-size: 0.68rem; resize: vertical; padding: 4px; border: 1px solid #cbd5e1; border-radius: 4px; color:#475569;"></textarea>
       </div>
     </div>
     <div class="modal-footer">

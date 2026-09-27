@@ -1,36 +1,67 @@
 # Linksim 2.0 - High-Performance 2D Mechanical Linkage & Physics Simulator
 
-A 60+ FPS 2D mechanical linkage and physics simulator running on Extended Position-Based Dynamics (XPBD). Supports rigid links, physical materials, fixed pins, prismatic linear sliders, authentic meshed gears, rotational motors, rigid bell-crank brackets, timeline scrubbing playback, and procedural mechanical sprites.
+Live Demo: [https://tomcallan.github.io/linksim/](https://tomcallan.github.io/linksim/)
 
-## Features
+Linksim is a 60+ FPS browser-based 2D mechanical linkage and physics simulator running on Extended Position-Based Dynamics (XPBD). Built with pure vanilla JavaScript and HTML5 Canvas, it features zero runtime dependencies, sub-stepped multi-pass constraint solving, zero rod stretch, physical materials, realistic machine elements, and deep interactive mechanics.
 
-- **High-Performance XPBD Engine:** Sub-stepped multi-pass Gauss-Seidel solver with zero per-frame heap allocations.
-- **Physical Materials & Zero Stretch:** Rigid Steel, Aluminum, Carbon Fiber, Composite Wood, Rubber Band, and Coil Spring with true XPBD compliance ($\alpha$).
-- **2D Constraints & Mechanisms:**
-  - **Rigid Rods / Bars:** Infinitely stiff distance constraints.
-  - **Ground Pins:** Fixed mechanical anchors with earth hatching stands.
-  - **Prismatic Sliders:** Cylinder guide rails with sliding pistons and friction.
-  - **Authentic Toothed Gears:** Involute profile teeth with automatic mathematical phase alignment and pitch circle meshing.
-  - **Rotational Motors:** Kinematic and torque-coupled rotational drives.
-  - **Bell-Cranks & Orthogonal Levers:** Rigid 2D angle constraints for transferring motion across right angles.
-  - **Parenting to Gears:** Attach eccentric crankpins directly to gear bodies.
-- **Single-Window Unified Workspace:** Seamlessly toggle between Edit and Simulate modes, or press `Space` to Play/Pause.
-- **Fluid Universal Interaction:**
-  - Drag from any node to stretch and connect rigid rods.
-  - Drag empty space to pan the view in ANY tool mode.
-  - Pinch-to-zoom and two-finger pan on touchscreens / trackpads.
-  - Long-press or right-click to open the context menu.
-  - Double-click any element to open the Property Inspector.
-- **Deterministic Timeline Playback:** 1800-frame cyclic snapshot buffer with Play, Pause, Step Back, Step Forward, and bi-directional Time Scrubbing.
+## Key Features
 
-## Controls & Shortcuts
+- **Zero-Stretch XPBD Solver**: 30-substep Gauss-Seidel solver ensuring completely rigid linkages without rubbery stretching or numerical drift.
+- **Strict Kinematic Consistency**: Motors, gear-attached crankpins, Geneva drivers, and cams act as true kinematic anchors during constraint projection.
+- **Deep Physical Interactions**:
+  - **Dynamic Shifting Gearbox**: Multi-speed transmission where moving a shift lever on a slider rail dynamically meshes gears in real time.
+  - **Over-Center Toggle Clamp**: Bistable mechanism demonstrating mechanical advantage and snap-action locking past dead-center.
+  - **Clock Escapement**: Escape wheel with ratchet teeth driving a rocking anchor pallet pendulum, producing authentic tick-tock stepping.
+  - **Non-Destructive Mouse Dragging**: Interactive spring attraction allows dragging mechanisms by hand without violating rigid rod constraints.
+- **Interactive Vector Cam Designer**:
+  - Direct on-canvas freehand sculpting and carving of cam profiles.
+  - Draggable control handles to shape lobes and flat spots.
+  - Shape presets including Pear, Heart, Snail, Geneva, 3-Lobe Trochoid, 4-Leaf Clover, and Star.
+  - Live follower simulation resting directly on the rotating cam profile.
+- **Comprehensive Machine Elements**:
+  - Involute toothed gears with automatic mathematical phase alignment.
+  - Intermittent motion Geneva drives with circular locking dwell arcs.
+  - Open and crossed belt and stepped pulley drives.
+  - Prismatic linear sliders with arbitrary orientation angles.
+  - Helical springs with Hooke's law elastic potential and harmonic oscillation.
+  - Rigid orthogonal bell-cranks for right-angle force transmission.
+- **Deterministic 1800-Frame Cyclic Timeline**:
+  - Frame-by-frame stepping forward and backward.
+  - Bidirectional time scrubbing.
+  - Automatic periodic loop detection and cached replay.
+- **Programmatic API for AI Agents**: Full headless or browser automation via `window.LinksimAPI`.
+
+---
+
+## Example Mechanical Presets
+
+Linksim includes 14 curated, Grashof-compliant mechanical presets:
+
+1. **Four-Bar Linkage**: Fundamental Grashof crank-rocker mechanism demonstrating continuous rotary-to-oscillating motion and coupler curves.
+2. **Slider-Crank Engine**: Inline internal combustion engine layout with rotating crankshaft, connecting rod, and crosshead piston.
+3. **Chebyshev Straight-Line Linkage**: Cognate linkage generating near-perfect linear motion without guide rails.
+4. **Klann Walker Leg**: Mechanical leg linkage mimicking planar insect and animal walking strides with a flat stance phase and high swinging step.
+5. **Theo Jansen Strandbeest Leg**: Kinetic 11-rod linkage with exact proportions producing the famous stepping loop.
+6. **Geared Bell-Crank**: Motor-driven pinion and gear with eccentric pin driving a 90-degree bell crank and vertical piston.
+7. **Compound Gear Train**: Multi-stage speed reduction and torque multiplication using compound intermediate gears.
+8. **Geneva Drive (4-Slot)**: Precision intermittent motion indexing mechanism with drive pin and locking dwell arc.
+9. **Cam & Valve Follower**: Rotating teardrop cam lifting a roller follower against a stiff helical return spring.
+10. **Belt & Pulley Transmission**: Stepped open and crossed belt drives with direction reversal.
+11. **Interactive Gearbox**: Multi-speed transmission with a movable shift lever that dynamically meshes 1st gear, Neutral, and 2nd gear.
+12. **Clock Escapement**: Rotating ratchet escape wheel driving a rocking pallet anchor and pendulum, stepping one tooth per tick.
+13. **Over-Center Toggle Clamp**: Bistable clamp snapping into a rigid locked state when pushed past collinear dead-center.
+14. **Mechanism Gallery**: Six independent mechanisms (slider-crank, gear train, cam follower, oscillator, belt drive, and 4-bar) operating synchronously.
+
+---
+
+## Controls and Shortcuts
 
 | Action | Control / Shortcut |
 | :--- | :--- |
 | **Play / Pause** | `Space` |
 | **Pan Canvas** | Drag empty space, Middle-drag, or Two-finger drag |
 | **Zoom** | Mouse wheel or Pinch gesture |
-| **Connect Rod** | Click & drag from node to another node (or empty space) |
+| **Connect Rod** | Click & drag from node to another node |
 | **Context Menu** | Right-click or Touch Long-press |
 | **Inspect Properties** | Double-click element or Context Menu -> Configure |
 | **Select / Move** | `V` |
@@ -40,13 +71,15 @@ A 60+ FPS 2D mechanical linkage and physics simulator running on Extended Positi
 | **Add Slider** | `S` |
 | **Add Gear** | `G` |
 | **Add Motor** | `M` |
+| **Add Spring** | Context menu on node or toolbar |
+| **Custom Cam Designer** | Context menu on node -> Cam Designer |
 | **Delete Element** | `Delete` or `Backspace` |
 | **Undo** | `Ctrl + Z` |
 | **Step Backward / Forward** | `[` / `]` |
 
-## Programmatic API for AI Agents & Programs
+---
 
-Linksim exposes `window.LinksimAPI` allowing AI agents or scripts to build, simulate, and inspect mechanisms programmatically:
+## Programmatic API (`window.LinksimAPI`)
 
 ```javascript
 // 1. Declaratively build a mechanism
@@ -82,13 +115,18 @@ console.log(telemetry.nodes); // [{ id, x, y, vx, vy, fixed }, ...]
 console.log(telemetry.rods);  // [{ a, b, length, stress, material }, ...]
 ```
 
-## Running & Testing
+---
+
+## Testing & Local Execution
 
 ```bash
-# Run automated test suites
+# Run all automated test suites
+node tests/test-presets-rigidity.js
+node tests/test-physics-rigidity.js
 node tests/test-physics.js
 node tests/test-api.js
+node tests/test-ui-menu.js
 
-# Launch local server
+# Launch local HTTP server
 npx serve .
 ```

@@ -156,9 +156,11 @@ function simulatePreset(preset, name, frames) {
 }
 
 const presets = [
-  'klann',
+  'fourbar',
   'sliderCrank',
   'chebyshev',
+  'klann',
+  'jansen',
   'gearedBellCrank',
   'gearTrain',
   'geneva',
@@ -166,6 +168,7 @@ const presets = [
   'beltDrive',
   'gearbox',
   'escapement',
+  'overcenter',
   'showcase'
 ];
 

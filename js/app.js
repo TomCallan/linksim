@@ -1223,6 +1223,13 @@
     var inputLift = document.getElementById('camLift');
     var textPoints = document.getElementById('camPointsText');
     var previewCanvas = document.getElementById('camPreviewCanvas');
+    var vertexCountEl = document.getElementById('camVertexCount');
+    var drawHintEl = document.getElementById('camDrawHint');
+    var btnDrawMode = document.getElementById('btnCamDrawMode');
+    var btnVertexMode = document.getElementById('btnCamVertexMode');
+    var btnSmooth = document.getElementById('btnCamSmooth');
+    var btnAddLobe = document.getElementById('btnCamAddLobe');
+    var btnResetCircle = document.getElementById('btnCamResetCircle');
     var btnClose = document.getElementById('btnCamDesignerClose');
     var btnCancel = document.getElementById('btnCamDesignerCancel');
     var btnSave = document.getElementById('btnCamDesignerSave');
@@ -1231,19 +1238,68 @@
     var previewCtx = previewCanvas.getContext('2d');
     var currentCam = (camIdx !== undefined && camIdx !== null && editor.cams[camIdx]) ? editor.cams[camIdx] : null;
 
+    var NUM_BINS = 72;
+    var radii = new Float64Array(NUM_BINS);
+    var activeMode = 'draw'; // 'draw' or 'vertex'
+    var isInteracting = false;
+    var activeHandleIdx = -1;
+
+    function getAngleIndex(theta) {
+      var norm = (theta + Math.PI) / (2 * Math.PI);
+      var idx = Math.floor(norm * NUM_BINS) % NUM_BINS;
+      if (idx < 0) idx += NUM_BINS;
+      return idx;
+    }
+
+    function indexToAngle(idx) {
+      return (idx / NUM_BINS) * Math.PI * 2 - Math.PI;
+    }
+
+    function syncRadiiFromPoints(pts) {
+      var rBase = parseFloat(inputBaseR.value) || 35;
+      radii.fill(rBase);
+      if (!pts || pts.length < 3) return;
+      for (var i = 0; i < pts.length; i++) {
+        var x = pts[i][0];
+        var y = pts[i][1];
+        var th = Math.atan2(y, x);
+        var r = Math.hypot(x, y);
+        radii[getAngleIndex(th)] = r;
+      }
+      // Fill any zero gaps by linear interpolation
+      for (var i = 0; i < NUM_BINS; i++) {
+        if (radii[i] < 5) radii[i] = rBase;
+      }
+    }
+
+    function generatePointsFromRadii() {
+      var pts = [];
+      for (var i = 0; i < NUM_BINS; i++) {
+        var th = indexToAngle(i);
+        var r = radii[i];
+        pts.push([Math.round(r * Math.cos(th) * 10) / 10, Math.round(r * Math.sin(th) * 10) / 10]);
+      }
+      return pts;
+    }
+
     if (currentCam) {
       inputBaseR.value = currentCam.baseRadius || 35;
       inputLift.value = currentCam.lift !== undefined ? currentCam.lift : 25;
       if (currentCam.options && currentCam.options.points) {
         textPoints.value = JSON.stringify(currentCam.options.points);
         selectPreset.value = 'freeform';
+        syncRadiiFromPoints(currentCam.options.points);
       } else {
         selectPreset.value = currentCam.profileType || 'pear';
+        var initPts = generatePointsForPreset(selectPreset.value, inputBaseR.value, inputLift.value);
+        syncRadiiFromPoints(initPts);
       }
     } else {
       inputBaseR.value = 35;
       inputLift.value = 25;
-      selectPreset.value = 'trochoid';
+      selectPreset.value = 'pear';
+      var initPts = generatePointsForPreset('pear', 35, 25);
+      syncRadiiFromPoints(initPts);
     }
 
     function generatePointsForPreset(preset, rBase, lift) {
@@ -1253,22 +1309,20 @@
       if (preset === 'geneva') {
         pts = Math2D.getGenevaPoints(4, rBase + lift * 0.4, (rBase + lift * 0.4) * Math.SQRT2, 11);
       } else if (preset === 'pear') {
-        pts = Math2D.getCamPoints('pear', rBase, lift, 72, { lobeAngle: 65 });
+        pts = Math2D.getCamPoints('pear', rBase, lift, NUM_BINS, { lobeAngle: 65 });
       } else if (preset === 'heart') {
-        pts = Math2D.getCamPoints('heart', rBase, lift, 72);
+        pts = Math2D.getCamPoints('heart', rBase, lift, NUM_BINS);
       } else if (preset === 'snail') {
-        pts = Math2D.getCamPoints('snail', rBase, lift, 72);
+        pts = Math2D.getCamPoints('snail', rBase, lift, NUM_BINS);
       } else if (preset === 'trochoid') {
-        // 3-Lobe Trochoidal Rotor Profile
-        for (var i = 0; i < 72; i++) {
-          var a = (i / 72) * Math.PI * 2;
+        for (var i = 0; i < NUM_BINS; i++) {
+          var a = indexToAngle(i);
           var r = rBase + lift * 0.5 * (1 + Math.cos(3 * a));
           pts.push([Math.round(r * Math.cos(a) * 10) / 10, Math.round(r * Math.sin(a) * 10) / 10]);
         }
       } else if (preset === 'clover') {
-        // 4-Leaf Clover
-        for (var i = 0; i < 72; i++) {
-          var a = (i / 72) * Math.PI * 2;
+        for (var i = 0; i < NUM_BINS; i++) {
+          var a = indexToAngle(i);
           var r = rBase + lift * 0.5 * (1 + Math.cos(4 * a));
           pts.push([Math.round(r * Math.cos(a) * 10) / 10, Math.round(r * Math.sin(a) * 10) / 10]);
         }
@@ -1288,60 +1342,129 @@
         try {
           pts = JSON.parse(textPoints.value);
         } catch(e) {
-          pts = Math2D.getCamPoints('pear', rBase, lift, 36);
+          pts = Math2D.getCamPoints('pear', rBase, lift, NUM_BINS);
         }
       }
       return pts;
     }
 
-    function updatePreview() {
+    function applyRadialBrush(mx, my) {
+      var cx = previewCanvas.width / 2;
+      var cy = previewCanvas.height / 2;
+      var dx = mx - cx;
+      var dy = my - cy;
+      var dist = Math.hypot(dx, dy);
+      var angle = Math.atan2(dy, dx);
+      var targetR = Math.max(12, Math.min(95, dist));
+      var centerIdx = getAngleIndex(angle);
+
+      // Smooth radial influence across neighboring angular bins
+      var brushSpan = 6;
+      for (var offset = -brushSpan; offset <= brushSpan; offset++) {
+        var idx = (centerIdx + offset + NUM_BINS) % NUM_BINS;
+        var weight = Math.cos((offset / (brushSpan + 1)) * (Math.PI / 2));
+        radii[idx] = radii[idx] * (1 - weight * 0.6) + targetR * (weight * 0.6);
+      }
+      selectPreset.value = 'freeform';
+      updatePreview(true);
+    }
+
+    function smoothContour() {
+      var smoothed = new Float64Array(NUM_BINS);
+      for (var i = 0; i < NUM_BINS; i++) {
+        var prev = radii[(i - 1 + NUM_BINS) % NUM_BINS];
+        var cur = radii[i];
+        var next = radii[(i + 1) % NUM_BINS];
+        smoothed[i] = prev * 0.25 + cur * 0.5 + next * 0.25;
+      }
+      radii.set(smoothed);
+      selectPreset.value = 'freeform';
+      updatePreview(true);
+    }
+
+    function updatePreview(skipPresetGen) {
       var pts = [];
       var preset = selectPreset.value;
-      if (preset === 'freeform') {
-        try {
-          pts = JSON.parse(textPoints.value);
-        } catch(e) {
-          pts = [];
-        }
-      } else {
+      if (!skipPresetGen && preset !== 'freeform') {
         pts = generatePointsForPreset(preset, inputBaseR.value, inputLift.value);
-        textPoints.value = JSON.stringify(pts);
+        syncRadiiFromPoints(pts);
+      } else {
+        pts = generatePointsFromRadii();
       }
+      textPoints.value = JSON.stringify(pts);
+      if (vertexCountEl) vertexCountEl.textContent = pts.length + ' vertices';
 
       previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
       var cx = previewCanvas.width / 2;
       var cy = previewCanvas.height / 2;
 
-      // Draw grid
+      // Draw polar reference grid
       previewCtx.strokeStyle = '#f1f5f9';
       previewCtx.lineWidth = 1;
+      var gridRadii = [25, 50, 75, 100];
+      for (var gr = 0; gr < gridRadii.length; gr++) {
+        previewCtx.beginPath();
+        previewCtx.arc(cx, cy, gridRadii[gr], 0, Math.PI * 2);
+        previewCtx.stroke();
+      }
       previewCtx.beginPath();
       previewCtx.moveTo(cx, 0); previewCtx.lineTo(cx, previewCanvas.height);
       previewCtx.moveTo(0, cy); previewCtx.lineTo(previewCanvas.width, cy);
       previewCtx.stroke();
 
+      // Base radius guide circle (dashed blue)
+      var baseR = parseFloat(inputBaseR.value) || 35;
+      previewCtx.save();
+      previewCtx.setLineDash([3, 3]);
+      previewCtx.strokeStyle = '#93c5fd';
+      previewCtx.beginPath();
+      previewCtx.arc(cx, cy, baseR, 0, Math.PI * 2);
+      previewCtx.stroke();
+      previewCtx.restore();
+
       if (pts && pts.length >= 3) {
         previewCtx.save();
         previewCtx.translate(cx, cy);
 
-        // Draw cam contour
+        // Draw cam contour body
         previewCtx.beginPath();
         previewCtx.moveTo(pts[0][0], pts[0][1]);
         for (var i = 1; i < pts.length; i++) {
           previewCtx.lineTo(pts[i][0], pts[i][1]);
         }
         previewCtx.closePath();
-        previewCtx.fillStyle = '#cbd5e1';
+        var camGrad = previewCtx.createRadialGradient(0, 0, 10, 0, 0, 80);
+        camGrad.addColorStop(0, '#e2e8f0');
+        camGrad.addColorStop(1, '#cbd5e1');
+        previewCtx.fillStyle = camGrad;
         previewCtx.fill();
         previewCtx.lineWidth = 2;
-        previewCtx.strokeStyle = '#334155';
+        previewCtx.strokeStyle = '#2563eb';
         previewCtx.stroke();
 
-        // Hub & bore
+        // If in vertex mode, draw handles on key points
+        if (activeMode === 'vertex') {
+          var step = Math.max(1, Math.floor(pts.length / 16));
+          for (var vi = 0; vi < pts.length; vi += step) {
+            var vx = pts[vi][0];
+            var vy = pts[vi][1];
+            previewCtx.beginPath();
+            previewCtx.arc(vx, vy, (activeHandleIdx === vi) ? 5 : 3.5, 0, Math.PI * 2);
+            previewCtx.fillStyle = (activeHandleIdx === vi) ? '#ef4444' : '#ffffff';
+            previewCtx.fill();
+            previewCtx.lineWidth = 1.5;
+            previewCtx.strokeStyle = '#1d4ed8';
+            previewCtx.stroke();
+          }
+        }
+
+        // Center hub & bore
         previewCtx.beginPath();
         previewCtx.arc(0, 0, 10, 0, Math.PI * 2);
         previewCtx.fillStyle = '#64748b';
         previewCtx.fill();
+        previewCtx.lineWidth = 1.5;
+        previewCtx.strokeStyle = '#334155';
         previewCtx.stroke();
 
         previewCtx.beginPath();
@@ -1349,19 +1472,141 @@
         previewCtx.fillStyle = '#0f172a';
         previewCtx.fill();
 
+        // Follower contact preview resting on top of cam
+        var topPt = pts[getAngleIndex(-Math.PI / 2)];
+        if (topPt) {
+          previewCtx.beginPath();
+          previewCtx.arc(0, topPt[1] - 8, 8, 0, Math.PI * 2);
+          previewCtx.fillStyle = '#10b981';
+          previewCtx.fill();
+          previewCtx.lineWidth = 1.5;
+          previewCtx.strokeStyle = '#047857';
+          previewCtx.stroke();
+        }
+
         previewCtx.restore();
       }
     }
 
-    selectPreset.onchange = updatePreview;
-    inputBaseR.oninput = updatePreview;
-    inputLift.oninput = updatePreview;
-    textPoints.oninput = function() {
-      selectPreset.value = 'freeform';
-      updatePreview();
+    // Canvas Mouse / Touch Drawing Handlers
+    function getCanvasCoords(e) {
+      var rect = previewCanvas.getBoundingClientRect();
+      var clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+      var clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+      return {
+        x: (clientX - rect.left) * (previewCanvas.width / rect.width),
+        y: (clientY - rect.top) * (previewCanvas.height / rect.height)
+      };
+    }
+
+    previewCanvas.onmousedown = function(e) {
+      isInteracting = true;
+      var pos = getCanvasCoords(e);
+      if (activeMode === 'draw') {
+        applyRadialBrush(pos.x, pos.y);
+      } else {
+        // Find closest handle
+        var cx = previewCanvas.width / 2;
+        var cy = previewCanvas.height / 2;
+        var pts = generatePointsFromRadii();
+        var step = Math.max(1, Math.floor(pts.length / 16));
+        var bestIdx = -1, bestDist = 18;
+        for (var vi = 0; vi < pts.length; vi += step) {
+          var hx = cx + pts[vi][0];
+          var hy = cy + pts[vi][1];
+          var d = Math.hypot(pos.x - hx, pos.y - hy);
+          if (d < bestDist) {
+            bestDist = d;
+            bestIdx = vi;
+          }
+        }
+        activeHandleIdx = bestIdx;
+      }
     };
 
-    updatePreview();
+    window.addEventListener('mousemove', function(e) {
+      if (!isInteracting || modal.style.display !== 'flex') return;
+      var pos = getCanvasCoords(e);
+      if (activeMode === 'draw') {
+        applyRadialBrush(pos.x, pos.y);
+      } else if (activeHandleIdx !== -1) {
+        var cx = previewCanvas.width / 2;
+        var cy = previewCanvas.height / 2;
+        var r = Math.max(12, Math.min(95, Math.hypot(pos.x - cx, pos.y - cy)));
+        radii[activeHandleIdx] = r;
+        selectPreset.value = 'freeform';
+        updatePreview(true);
+      }
+    });
+
+    window.addEventListener('mouseup', function() {
+      if (isInteracting && modal.style.display === 'flex') {
+        isInteracting = false;
+        activeHandleIdx = -1;
+        updatePreview(true);
+      }
+    });
+
+    // Toolbar mode toggle
+    if (btnDrawMode && btnVertexMode) {
+      btnDrawMode.onclick = function() {
+        activeMode = 'draw';
+        btnDrawMode.style.background = '#2563eb'; btnDrawMode.style.color = '#fff'; btnDrawMode.style.borderColor = '#1d4ed8';
+        btnVertexMode.style.background = '#fff'; btnVertexMode.style.color = '#1e293b'; btnVertexMode.style.borderColor = '#cbd5e1';
+        if (drawHintEl) drawHintEl.textContent = 'Click and drag around the center hub to carve custom profile in real time';
+        updatePreview(true);
+      };
+      btnVertexMode.onclick = function() {
+        activeMode = 'vertex';
+        btnVertexMode.style.background = '#2563eb'; btnVertexMode.style.color = '#fff'; btnVertexMode.style.borderColor = '#1d4ed8';
+        btnDrawMode.style.background = '#fff'; btnDrawMode.style.color = '#1e293b'; btnDrawMode.style.borderColor = '#cbd5e1';
+        if (drawHintEl) drawHintEl.textContent = 'Drag circular vertex handles inward/outward to shape cam lobes and flats';
+        updatePreview(true);
+      };
+    }
+
+    if (btnSmooth) btnSmooth.onclick = smoothContour;
+    if (btnAddLobe) {
+      btnAddLobe.onclick = function() {
+        var rBase = parseFloat(inputBaseR.value) || 35;
+        var topIdx = getAngleIndex(-Math.PI / 2);
+        for (var off = -10; off <= 10; off++) {
+          var idx = (topIdx + off + NUM_BINS) % NUM_BINS;
+          var w = Math.cos((off / 11) * (Math.PI / 2));
+          radii[idx] = Math.max(radii[idx], rBase + 28 * w);
+        }
+        selectPreset.value = 'freeform';
+        updatePreview(true);
+      };
+    }
+    if (btnResetCircle) {
+      btnResetCircle.onclick = function() {
+        var rBase = parseFloat(inputBaseR.value) || 35;
+        radii.fill(rBase);
+        selectPreset.value = 'freeform';
+        updatePreview(true);
+      };
+    }
+
+    selectPreset.onchange = function() {
+      updatePreview(false);
+    };
+    inputBaseR.oninput = function() {
+      updatePreview(false);
+    };
+    inputLift.oninput = function() {
+      updatePreview(false);
+    };
+    textPoints.oninput = function() {
+      selectPreset.value = 'freeform';
+      try {
+        var p = JSON.parse(textPoints.value);
+        syncRadiiFromPoints(p);
+      } catch(e) {}
+      updatePreview(true);
+    };
+
+    updatePreview(false);
     modal.style.display = 'flex';
 
     function closeCamModal() {
@@ -1372,12 +1617,7 @@
     btnCancel.onclick = closeCamModal;
 
     btnSave.onclick = function() {
-      var pts = [];
-      try {
-        pts = JSON.parse(textPoints.value);
-      } catch(e) {
-        pts = generatePointsForPreset(selectPreset.value, inputBaseR.value, inputLift.value);
-      }
+      var pts = generatePointsFromRadii();
       var bRadius = parseFloat(inputBaseR.value) || 35;
       var cLift = parseFloat(inputLift.value) || 25;
 

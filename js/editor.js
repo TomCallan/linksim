@@ -2211,450 +2211,553 @@
     ctx.restore();
   };
 
-  MechanismEditor.Presets = {
-    // 1. Klann Walking Mechanism
-    klann: {
-      version: '2.0',
-      nodes: [
-        { id: 0, x: 0, y: 0, fixed: true, mass: 1 },
-        { id: 1, x: -7, y: 13, fixed: false, mass: 1 },
-        { id: 2, x: -60, y: 30, fixed: false, mass: 1 },
-        { id: 3, x: -30, y: -50, fixed: false, mass: 1 },
-        { id: 4, x: -38, y: -7.8, fixed: true, mass: 1 },
-        { id: 5, x: -85, y: -20, fixed: false, mass: 1 },
-        { id: 6, x: -70, y: -65, fixed: false, mass: 1 },
-        { id: 7, x: 0, y: -100, fixed: false, mass: 1 }
-      ],
-      rods: [
-        { a: 0, b: 1, length: 15.0, width: 8, color: '#f59e0b' },
-        { a: 1, b: 2, length: 50.0, width: 9, color: '#3b82f6' },
-        { a: 1, b: 3, length: 61.9, width: 9, color: '#3b82f6' },
-        { a: 2, b: 4, length: 41.5, width: 9, color: '#64748b' },
-        { a: 3, b: 4, length: 39.3, width: 9, color: '#64748b' },
-        { a: 4, b: 5, length: 40.1, width: 9, color: '#3b82f6' },
-        { a: 2, b: 5, length: 55.8, width: 9, color: '#3b82f6' },
-        { a: 3, b: 6, length: 36.7, width: 9, color: '#3b82f6' },
-        { a: 5, b: 6, length: 39.4, width: 9, color: '#3b82f6' },
-        { a: 3, b: 7, length: 49.0, width: 9, color: '#10b981' },
-        { a: 6, b: 7, length: 65.7, width: 9, color: '#10b981' }
-      ],
-      sliders: [],
-      gears: [],
-      motors: [
-        { centerNode: 0, crankNode: 1, speed: 3.0 }
-      ],
-      brackets: []
-    },
+  MechanismEditor.Presets = // Full suite of 14 recreated, clean mechanical presets
+module.exports = {
+  // 1. Grashof Four-Bar Crank-Rocker Linkage
+  fourbar: {
+    version: '2.0',
+    nodes: [
+      { id: 0, x: 80,  y: 160, fixed: true, mass: 1 },    // Ground pivot A (Crank)
+      { id: 1, x: 120, y: 160, fixed: false, mass: 1 },   // Crank pin (Radius 40)
+      { id: 2, x: 280, y: 160, fixed: true, mass: 1 },    // Ground pivot B (Rocker)
+      { id: 3, x: 267.5, y: 10.5, fixed: false, mass: 1 } // Coupler / Rocker joint
+    ],
+    rods: [
+      { a: 0, b: 1, length: 40, width: 11, color: '#f59e0b' },  // Crank (motor driven)
+      { a: 1, b: 3, length: 210, width: 9, color: '#3b82f6' },  // Coupler rod
+      { a: 2, b: 3, length: 150, width: 10, color: '#10b981' }  // Oscillating rocker
+    ],
+    sliders: [],
+    gears: [],
+    motors: [
+      { centerNode: 0, crankNode: 1, speed: 4.0 }
+    ],
+    brackets: [],
+    labels: [
+      { x: 40,  y: 195, text: 'Motor Crank (4 rad/s)', fontSize: 13, color: '#b45309', bold: true },
+      { x: 160, y: 70,  text: 'Coupler Rod (L = 210 mm)', fontSize: 12, color: '#1d4ed8', bold: true },
+      { x: 250, y: 195, text: 'Oscillating Rocker Pivot', fontSize: 13, color: '#047857', bold: true },
+      { x: 90,  y: -25, text: 'Grashof Four-Bar Crank-Rocker Linkage', fontSize: 15, color: '#1e293b', bold: true }
+    ]
+  },
 
-    // 2. Slider-Crank (Piston Engine)
-    sliderCrank: {
-      version: '2.0',
-      nodes: [
-        { id: 0, x: -100, y: 0, fixed: true, mass: 1 },
-        { id: 1, x: -60, y: 0, fixed: false, mass: 1 },
-        { id: 2, x: 70, y: 0, fixed: false, mass: 1 },
-        { id: 3, x: 0, y: 0, fixed: true, mass: 1 },
-        { id: 4, x: 180, y: 0, fixed: true, mass: 1 }
-      ],
-      rods: [
-        { a: 0, b: 1, length: 40, width: 12, color: '#f59e0b' },
-        { a: 1, b: 2, length: 130, width: 10, color: '#3b82f6' }
-      ],
-      sliders: [
-        { node: 2, aNode: 3, bNode: 4 }
-      ],
-      gears: [],
-      motors: [
-        { centerNode: 0, crankNode: 1, speed: 3.5 }
-      ],
-      brackets: []
-    },
+  // 2. In-Line Slider-Crank (Piston Engine / Compressor)
+  sliderCrank: {
+    version: '2.0',
+    nodes: [
+      { id: 0, x: -100, y: 0, fixed: true, mass: 1 },   // Crankshaft main journal
+      { id: 1, x: -60,  y: 0, fixed: false, mass: 1 },  // Crankpin (Radius 40)
+      { id: 2, x: 70,   y: 0, fixed: false, mass: 2 },  // Crosshead / Piston pin
+      { id: 3, x: -40,  y: 0, fixed: true, mass: 1 },   // Cylinder guide start
+      { id: 4, x: 180,  y: 0, fixed: true, mass: 1 }    // Cylinder guide end
+    ],
+    rods: [
+      { a: 0, b: 1, length: 40, width: 14, color: '#f59e0b' },  // Crank throw
+      { a: 1, b: 2, length: 130, width: 11, color: '#3b82f6' }  // Connecting rod
+    ],
+    sliders: [
+      { node: 2, aNode: 3, bNode: 4 }
+    ],
+    gears: [],
+    motors: [
+      { centerNode: 0, crankNode: 1, speed: 4.5 }
+    ],
+    brackets: [],
+    labels: [
+      { x: -180, y: -45, text: 'Crankshaft Bearing', fontSize: 13, color: '#b45309', bold: true },
+      { x: -20,  y: -30, text: 'Connecting Rod', fontSize: 12, color: '#1d4ed8', bold: true },
+      { x: 80,   y: -45, text: 'Reciprocating Piston', fontSize: 13, color: '#047857', bold: true },
+      { x: -80,  y: 75,  text: 'In-Line Slider-Crank Engine (Stroke: 90 mm)', fontSize: 15, color: '#1e293b', bold: true }
+    ]
+  },
 
-    // 3. Chebyshev Straight-Line Linkage
-    chebyshev: {
-      version: '2.0',
-      nodes: [
-        { id: 0, x: -50, y: 0, fixed: true, mass: 1 },
-        { id: 1, x: 50, y: 0, fixed: true, mass: 1 },
-        { id: 2, x: -50, y: 100, fixed: false, mass: 1 },
-        { id: 3, x: 50, y: 100, fixed: false, mass: 1 },
-        { id: 4, x: 0, y: 100, fixed: false, mass: 1 }
-      ],
-      rods: [
-        { a: 0, b: 2, length: 100, width: 10, color: '#3b82f6' },
-        { a: 1, b: 3, length: 100, width: 10, color: '#3b82f6' },
-        { a: 2, b: 4, length: 50, width: 10, color: '#10b981' },
-        { a: 4, b: 3, length: 50, width: 10, color: '#10b981' }
-      ],
-      sliders: [],
-      gears: [],
-      motors: [
-        { centerNode: 0, crankNode: 2, speed: 2.0 }
-      ],
-      brackets: []
-    },
+  // 3. Chebyshev Straight-Line Linkage (Cognate Linear Motion Without Rails)
+  chebyshev: {
+    version: '2.0',
+    nodes: [
+      { id: 0, x: -40, y: 0, fixed: true, mass: 1 },     // Ground pivot A
+      { id: 1, x: 40,  y: 0, fixed: true, mass: 1 },     // Ground pivot B
+      { id: 2, x: -40, y: 100, fixed: false, mass: 1 },   // Left arm end
+      { id: 3, x: 40,  y: 100, fixed: false, mass: 1 },   // Right arm end
+      { id: 4, x: 0,   y: 100, fixed: false, mass: 1 }    // Coupler midpoint (linear tracer)
+    ],
+    rods: [
+      { a: 0, b: 2, length: 100, width: 10, color: '#f59e0b' },
+      { a: 1, b: 3, length: 100, width: 10, color: '#10b981' },
+      { a: 2, b: 3, length: 80,  width: 9,  color: '#3b82f6' },
+      { a: 2, b: 4, length: 40,  width: 7,  color: '#6366f1' },
+      { a: 3, b: 4, length: 40,  width: 7,  color: '#6366f1' }
+    ],
+    sliders: [],
+    gears: [],
+    motors: [
+      { centerNode: 0, crankNode: 2, speed: 2.5 }
+    ],
+    brackets: [],
+    labels: [
+      { x: -100, y: -30, text: 'Fixed Base (d = 80 mm)', fontSize: 13, color: '#64748b', bold: true },
+      { x: -45,  y: 135, text: 'Coupler Midpoint (Near-Zero Deviation Line)', fontSize: 13, color: '#4338ca', bold: true },
+      { x: -95,  y: 165, text: 'Chebyshev Straight-Line Mechanism', fontSize: 15, color: '#1e293b', bold: true }
+    ]
+  },
 
-    // 4. Geared Piston & Bell-Crank (Orthogonal Transfer & Geared Crank)
-    gearedBellCrank: {
-      version: '2.0',
-      nodes: [
-        { id: 0, x: -100, y: 0, fixed: true, mass: 1 },    // Gear 1 center
-        { id: 1, x: 0, y: 0, fixed: true, mass: 1 },       // Gear 2 center
-        { id: 2, x: 0, y: 35, fixed: false, mass: 1, parentGear: { gearIdx: 1, radius: 35, angleOffset: Math.PI / 2 } },     // Pin attached on Gear 2
-        { id: 3, x: 90, y: 35, fixed: false, mass: 1 },    // Bell-crank input
-        { id: 4, x: 90, y: 80, fixed: true, mass: 1 },     // Bell-crank pivot
-        { id: 5, x: 135, y: 80, fixed: false, mass: 1 },   // Bell-crank 90-deg output
-        { id: 6, x: 135, y: 160, fixed: false, mass: 1 },  // Piston
-        { id: 7, x: 135, y: 120, fixed: true, mass: 1 },   // Slider rail start
-        { id: 8, x: 135, y: 220, fixed: true, mass: 1 }    // Slider rail end
-      ],
-      rods: [
-        { a: 2, b: 3, length: 115, width: 10, color: '#3b82f6' },
-        { a: 5, b: 6, length: 80, width: 10, color: '#10b981' }
-      ],
-      sliders: [
-        { node: 6, aNode: 7, bNode: 8, minT: 0, maxT: 150 }
-      ],
-      gears: [
-        { centerNode: 0, radius: 50, teeth: 20, meshWith: [1] },
-        { centerNode: 1, radius: 50, teeth: 20, meshWith: [0] }
-      ],
-      motors: [
-        { centerNode: 0, crankNode: 0, speed: 2.5 } // Drives gear 0
-      ],
-      brackets: [
-        { a: 3, b: 4, c: 5, width: 14, color: '#6366f1' }
-      ]
-    },
+  // 4. Klann Mechanical Walking Leg
+  klann: {
+    version: '2.0',
+    nodes: [
+      { id: 0, x: 0,   y: 0,    fixed: true, mass: 1 },    // Crank pivot
+      { id: 1, x: -7,  y: 13,   fixed: false, mass: 1 },   // Crank pin
+      { id: 2, x: -60, y: 30,   fixed: false, mass: 1 },   // Upper rocker node
+      { id: 3, x: -30, y: -50,  fixed: false, mass: 1 },   // Lower rocker node
+      { id: 4, x: -38, y: -7.8, fixed: true, mass: 1 },    // Frame pivot B
+      { id: 5, x: -85, y: -20,  fixed: false, mass: 1 },   // Knee / elbow
+      { id: 6, x: -70, y: -65,  fixed: false, mass: 1 },   // Lower link joint
+      { id: 7, x: 0,   y: -100, fixed: false, mass: 1 }    // Walking foot
+    ],
+    rods: [
+      { a: 0, b: 1, length: 15.0, width: 8, color: '#f59e0b' },
+      { a: 1, b: 2, length: 50.0, width: 9, color: '#3b82f6' },
+      { a: 1, b: 3, length: 61.9, width: 9, color: '#3b82f6' },
+      { a: 2, b: 4, length: 41.5, width: 9, color: '#64748b' },
+      { a: 3, b: 4, length: 39.3, width: 9, color: '#64748b' },
+      { a: 4, b: 5, length: 40.1, width: 9, color: '#3b82f6' },
+      { a: 2, b: 5, length: 55.8, width: 9, color: '#3b82f6' },
+      { a: 3, b: 6, length: 36.7, width: 9, color: '#3b82f6' },
+      { a: 5, b: 6, length: 39.4, width: 9, color: '#3b82f6' },
+      { a: 3, b: 7, length: 49.0, width: 9, color: '#10b981' },
+      { a: 6, b: 7, length: 65.7, width: 9, color: '#10b981' }
+    ],
+    sliders: [],
+    gears: [],
+    motors: [
+      { centerNode: 0, crankNode: 1, speed: 3.0 }
+    ],
+    brackets: [],
+    labels: [
+      { x: -35, y: 35,   text: 'Continuous Rotary Crank', fontSize: 13, color: '#b45309', bold: true },
+      { x: -95, y: 10,   text: 'Coupler & Dual Rockers', fontSize: 12, color: '#1d4ed8', bold: true },
+      { x: 15,  y: -100, text: 'Flat Stance & Swing Walking Curve', fontSize: 13, color: '#047857', bold: true },
+      { x: -80, y: 70,   text: 'Klann Mechanical Walking Leg Mechanism', fontSize: 15, color: '#1e293b', bold: true }
+    ]
+  },
 
-    // 5. Compound Gear Train
-    gearTrain: {
-      version: '2.0',
-      nodes: [
-        { id: 0, x: -70, y: 0, fixed: true, mass: 1 },
-        { id: 1, x: 0, y: 0, fixed: true, mass: 1 },
-        { id: 2, x: 90, y: 0, fixed: true, mass: 1 }
-      ],
-      rods: [],
-      sliders: [],
-      gears: [
-        { centerNode: 0, radius: 35, teeth: 14, meshWith: [1] },
-        { centerNode: 1, radius: 35, teeth: 14, meshWith: [0, 2] },
-        { centerNode: 2, radius: 55, teeth: 22, meshWith: [1] }
-      ],
-      motors: [
-        { centerNode: 0, crankNode: 0, speed: 2.0 }
-      ],
-      brackets: []
-    },
+  // 5. Theo Jansen Strandbeest Kinetic Leg Linkage
+  jansen: {
+    version: '2.0',
+    nodes: [
+      { id: 0, x: 0,   y: 0,    fixed: true, mass: 1 },    // Crank pivot
+      { id: 1, x: 15,  y: 0,    fixed: false, mass: 1 },   // Crank pin (m = 15)
+      { id: 2, x: -38, y: -7.8, fixed: true, mass: 1 },    // Fixed frame pivot
+      { id: 3, x: -7,  y: 13,   fixed: false, mass: 1 },   // Upper joint
+      { id: 4, x: -60, y: 30,   fixed: false, mass: 1 },   // Outer hip
+      { id: 5, x: -30, y: -50,  fixed: false, mass: 1 },   // Knee
+      { id: 6, x: -85, y: -20,  fixed: false, mass: 1 },   // Thigh joint
+      { id: 7, x: -70, y: -65,  fixed: false, mass: 1 },   // Shin joint
+      { id: 8, x: 0,   y: -100, fixed: false, mass: 1 }    // Foot
+    ],
+    rods: [
+      { a: 0, b: 1, length: 15.0, width: 8, color: '#f59e0b' },
+      { a: 1, b: 4, length: 50.0, width: 9, color: '#3b82f6' },
+      { a: 1, b: 5, length: 61.9, width: 9, color: '#3b82f6' },
+      { a: 4, b: 2, length: 41.5, width: 9, color: '#64748b' },
+      { a: 5, b: 2, length: 39.3, width: 9, color: '#64748b' },
+      { a: 2, b: 6, length: 40.1, width: 9, color: '#3b82f6' },
+      { a: 4, b: 6, length: 55.8, width: 9, color: '#3b82f6' },
+      { a: 5, b: 7, length: 36.7, width: 9, color: '#3b82f6' },
+      { a: 6, b: 7, length: 39.4, width: 9, color: '#3b82f6' },
+      { a: 5, b: 8, length: 49.0, width: 9, color: '#10b981' },
+      { a: 7, b: 8, length: 65.7, width: 9, color: '#10b981' }
+    ],
+    sliders: [],
+    gears: [],
+    motors: [
+      { centerNode: 0, crankNode: 1, speed: 3.0 }
+    ],
+    brackets: [],
+    labels: [
+      { x: -35, y: 35,   text: 'Crank Arm (m = 15)', fontSize: 13, color: '#b45309', bold: true },
+      { x: -95, y: 10,   text: '11 Holy Numbers Truss', fontSize: 12, color: '#1d4ed8', bold: true },
+      { x: 15,  y: -100, text: 'Ovoid Stepping Foot Path', fontSize: 13, color: '#047857', bold: true },
+      { x: -80, y: 70,   text: 'Theo Jansen Strandbeest Kinetic Leg', fontSize: 15, color: '#1e293b', bold: true }
+    ]
+  },
 
-    // 6. Geneva Mechanism (Maltese Cross Intermittent Indexer + Output Rocker)
-    // c1 at (-60,0), c2 at (60,0), D=120. beta=45 deg, crankRadius = 120*sin(45) = 84.85
-    // pin starts at angle -45 deg from c1 => (-60 + 84.85*cos(-45), 84.85*sin(-45)) = (0, -60)
-    // Geneva wheel radius = 120*cos(45) = 84.85
-    // Motor CCW (speed=3.0) causes wheel to index CW (negative direction).
-    // Follower pin attached at 90 deg offset from Geneva center for a rocker output.
-    geneva: {
-      version: '2.0',
-      nodes: [
-        { id: 0, x: -60, y: 0, fixed: true, mass: 1 },    // Driver crank center C1
-        { id: 1, x: 60, y: 0, fixed: true, mass: 1 },     // Geneva wheel center C2
-        { id: 2, x: 0, y: -60, fixed: false, mass: 1 },   // Drive crank pin (at -45 deg from C1, dist=84.85)
-        { id: 3, x: 99, y: 39, fixed: false, mass: 1, parentGeneva: { genevaIdx: 0, radius: 55, angleOffset: Math.PI / 2 } }, // Follower pin on Geneva
-        { id: 4, x: 185, y: 55, fixed: false, mass: 1 },  // Transmission rocker joint
-        { id: 5, x: 185, y: 140, fixed: true, mass: 1 }   // Rocker ground pivot
-      ],
-      rods: [
-        { a: 0, b: 2, length: 84.85, width: 8, color: '#f59e0b' },
-        { a: 3, b: 4, length: 125, width: 10, color: '#3b82f6' },
-        { a: 4, b: 5, length: 85, width: 12, color: '#10b981' }
-      ],
-      sliders: [],
-      gears: [],
-      genevas: [
-        { driverCenterNode: 0, driverPinNode: 2, genevaCenterNode: 1, slots: 4, radius: 84.85, pinRadius: 84.85, lockRadius: 40, slotWidth: 11, angle: -0.7854 }
-      ],
-      motors: [
-        { centerNode: 0, crankNode: 2, speed: 3.0 }
-      ],
-      brackets: [],
-      labels: [
-        { x: -110, y: -25, text: 'Drive Crank', fontSize: 11, color: '#b45309', bold: false },
-        { x: 25, y: -105, text: 'Geneva Wheel (4-slot)', fontSize: 11, color: '#475569', bold: false },
-        { x: 155, y: -25, text: 'Output Rocker', fontSize: 11, color: '#047857', bold: false }
-      ]
-    },
+  // 6. Geared Bell-Crank Transfer (Rotary to 90-Deg Reciprocating Linear Output)
+  gearedBellCrank: {
+    version: '2.0',
+    nodes: [
+      { id: 0, x: -100, y: 0, fixed: true, mass: 1 },    // Gear 1 center (Motor pinion)
+      { id: 1, x: 0,    y: 0, fixed: true, mass: 1 },    // Gear 2 center (Driven gear)
+      { id: 2, x: 0,    y: 35, fixed: false, mass: 1, parentGear: { gearIdx: 1, radius: 35, angleOffset: Math.PI / 2 } }, // Pin on Gear 2
+      { id: 3, x: 90,   y: 35, fixed: false, mass: 1 },  // Bell-crank input arm
+      { id: 4, x: 90,   y: 80, fixed: true, mass: 1 },   // Bell-crank pivot
+      { id: 5, x: 135,  y: 80, fixed: false, mass: 1 },  // Bell-crank 90-deg output arm
+      { id: 6, x: 135,  y: 160, fixed: false, mass: 1 }, // Piston
+      { id: 7, x: 135,  y: 120, fixed: true, mass: 1 },  // Slider rail top
+      { id: 8, x: 135,  y: 220, fixed: true, mass: 1 }   // Slider rail bottom
+    ],
+    rods: [
+      { a: 2, b: 3, length: 115, width: 10, color: '#3b82f6' },
+      { a: 5, b: 6, length: 80,  width: 10, color: '#10b981' }
+    ],
+    sliders: [
+      { node: 6, aNode: 7, bNode: 8, minT: 0, maxT: 150 }
+    ],
+    gears: [
+      { centerNode: 0, radius: 50, teeth: 20, meshWith: [1] },
+      { centerNode: 1, radius: 50, teeth: 20, meshWith: [0] }
+    ],
+    motors: [
+      { centerNode: 0, crankNode: 0, speed: 2.5 }
+    ],
+    brackets: [
+      { a: 3, b: 4, c: 5, width: 14, color: '#6366f1' }
+    ],
+    labels: [
+      { x: -130, y: -45, text: 'Input Drive Pinion', fontSize: 13, color: '#b45309', bold: true },
+      { x: -35,  y: -45, text: 'Driven Gear (Attached Pin)', fontSize: 13, color: '#1d4ed8', bold: true },
+      { x: 55,   y: 110, text: '90-Deg Rigid Bell-Crank', fontSize: 13, color: '#4338ca', bold: true },
+      { x: 110,  y: 245, text: 'Vertical Output Piston', fontSize: 13, color: '#047857', bold: true },
+      { x: -60,  y: -85, text: 'Geared Bell-Crank Rotary-to-Linear Transfer', fontSize: 15, color: '#1e293b', bold: true }
+    ]
+  },
 
-    // 7. Overhead Cam & Valve Follower (Physical Camming)
-    camFollower: {
-      version: '2.0',
-      nodes: [
-        { id: 0, x: -50, y: 0, fixed: true, mass: 1 },    // Cam center
-        { id: 1, x: -50, y: 55, fixed: false, mass: 1 },   // Roller follower
-        { id: 2, x: -50, y: 20, fixed: true, mass: 1 },   // Follower guide start
-        { id: 3, x: -50, y: 160, fixed: true, mass: 1 },  // Follower guide end
-        { id: 4, x: 20, y: 80, fixed: false, mass: 1 },   // Rocker arm input
-        { id: 5, x: 70, y: 80, fixed: true, mass: 1 },    // Rocker arm pivot
-        { id: 6, x: 120, y: 80, fixed: false, mass: 1 },  // Rocker arm output (valve tip)
-        { id: 7, x: 120, y: 140, fixed: true, mass: 1 }   // Valve spring base
-      ],
-      rods: [
-        { a: 1, b: 4, length: 74, width: 10, color: '#3b82f6' }
-      ],
-      springs: [
-        { a: 6, b: 7, restLength: 60, stiffness: 300, damping: 2.0, width: 14, color: '#10b981' }
-      ],
-      sliders: [
-        { node: 1, aNode: 2, bNode: 3, minT: 35, maxT: 85 }
-      ],
-      gears: [],
-      pulleys: [],
-      belts: [],
-      axles: [],
-      cams: [
-        { centerNode: 0, profileType: 'pear', baseRadius: 35, lift: 25, options: { lobeAngle: 60 } }
-      ],
-      camContacts: [
-        { camIdx: 0, followerNode: 1, rollerRadius: 10 }
-      ],
-      motors: [
-        { centerNode: 0, crankNode: 0, speed: 3.5 }
-      ],
-      brackets: [
-        { a: 4, b: 5, c: 6, width: 14, color: '#6366f1' }
-      ]
-    },
+  // 7. Compound Gear Train (Multi-Stage Speed Reduction / Torque Multiplier)
+  gearTrain: {
+    version: '2.0',
+    nodes: [
+      { id: 0, x: -85, y: 0, fixed: true, mass: 1 },  // Input pinion center
+      { id: 1, x: 0,   y: 0, fixed: true, mass: 1 },  // Intermediate compound gear center
+      { id: 2, x: 80,  y: 0, fixed: true, mass: 1 }   // Output bull gear center
+    ],
+    rods: [],
+    sliders: [],
+    gears: [
+      { centerNode: 0, radius: 25, teeth: 12, meshWith: [1] },     // Pinion 1 (12T)
+      { centerNode: 1, radius: 60, teeth: 28, meshWith: [0, 2] },  // Bull gear 1 (28T, 2.33:1)
+      { centerNode: 2, radius: 45, teeth: 20, meshWith: [1] }      // Output gear (20T)
+    ],
+    motors: [
+      { centerNode: 0, crankNode: 0, speed: 4.0 }
+    ],
+    brackets: [],
+    labels: [
+      { x: -125, y: -45, text: 'Input Pinion (12T, 4 rad/s)', fontSize: 13, color: '#b45309', bold: true },
+      { x: -35,  y: -75, text: 'Compound Idler (28T)', fontSize: 13, color: '#1d4ed8', bold: true },
+      { x: 65,   y: -60, text: 'High-Torque Output (20T)', fontSize: 13, color: '#047857', bold: true },
+      { x: -70,  y: 85,  text: 'Multi-Stage Involute Spur Gear Train', fontSize: 15, color: '#1e293b', bold: true }
+    ]
+  },
 
-    // 8. Belt Drive & Compound Axle Speed Reducer
-    beltDrive: {
-      version: '2.0',
-      nodes: [
-        { id: 0, x: -120, y: 0, fixed: true, mass: 1 },   // Motor & Driver Pulley
-        { id: 1, x: 0, y: 0, fixed: true, mass: 1 },      // Jackshaft: Driven Pulley & Pinion on shared Axle
-        { id: 2, x: 80, y: 0, fixed: true, mass: 1 },     // Driven Gear
-        { id: 3, x: 80, y: 35, fixed: false, mass: 1, parentGear: { gearIdx: 1, radius: 35, angleOffset: Math.PI / 2 } }, // Crank pin on Gear
-        { id: 4, x: 190, y: 35, fixed: false, mass: 1 },  // Piston joint
-        { id: 5, x: 120, y: 35, fixed: true, mass: 1 },   // Piston rail start
-        { id: 6, x: 260, y: 35, fixed: true, mass: 1 }    // Piston rail end
-      ],
-      rods: [
-        { a: 3, b: 4, length: 110, width: 10, color: '#3b82f6' }
-      ],
-      sliders: [
-        { node: 4, aNode: 5, bNode: 6, minT: 10, maxT: 130 }
-      ],
-      gears: [
-        { centerNode: 1, radius: 35, teeth: 14, meshWith: [1] },
-        { centerNode: 2, radius: 45, teeth: 18, meshWith: [0] }
-      ],
-      pulleys: [
-        { nodeId: 0, radius: 25 },
-        { nodeId: 1, radius: 55 }
-      ],
-      belts: [
-        { pulleyA: 0, pulleyB: 1, crossed: false, width: 8 }
-      ],
-      axles: [
-        { targetA: { type: 'pulley', index: 1 }, targetB: { type: 'gear', index: 0 }, ratio: 1.0 }
-      ],
-      cams: [],
-      camContacts: [],
-      motors: [
-        { centerNode: 0, crankNode: 0, speed: 4.0 }
-      ],
-      brackets: []
-    },
+  // 8. Geneva Drive / Maltese Cross (Intermittent Rotary Indexing)
+  geneva: {
+    version: '2.0',
+    nodes: [
+      { id: 0, x: 0,  y: 0,  fixed: true, mass: 1 },  // Driver center
+      { id: 1, x: 0,  y: 55, fixed: false, mass: 1 }, // Driver pin (radius 55)
+      { id: 2, x: 60, y: 0,  fixed: true, mass: 1 }   // Geneva wheel center
+    ],
+    rods: [
+      { a: 0, b: 1, length: 55, width: 8, color: '#f59e0b' }
+    ],
+    sliders: [],
+    gears: [],
+    genevas: [
+      {
+        driverCenterNode: 0,
+        driverPinNode: 1,
+        genevaCenterNode: 2,
+        slots: 4,
+        slotWidth: 12,
+        angle: -0.7854
+      }
+    ],
+    motors: [
+      { centerNode: 0, crankNode: 1, speed: 2.0 }
+    ],
+    brackets: [],
+    labels: [
+      { x: -60, y: 80,  text: 'Continuous Driver Pin', fontSize: 13, color: '#b45309', bold: true },
+      { x: 50,  y: 90,  text: '4-Slot Maltese Cross (90-Deg Index)', fontSize: 13, color: '#4338ca', bold: true },
+      { x: -10, y: -80, text: 'Geneva Drive (Intermittent Motion Indexer)', fontSize: 15, color: '#1e293b', bold: true }
+    ]
+  },
 
-    // 9. Multi-Speed Gearbox & Shifter Transmission (Dynamic Meshing & Shift Lever)
-    // Lever pivot at (130,0), handle OUT TO THE SIDE at (185,10), output arm DOWN at (130,-60).
-    // Non-collinear layout gives a proper rigid triangle. Drag handle left/right to shift.
-    gearbox: {
-      version: '2.0',
-      nodes: [
-        { id: 0, x: -55, y: -50, fixed: true, mass: 1 },    // Input Shaft 1: 1st Drive Pinion
-        { id: 1, x: -75, y: 50, fixed: true, mass: 1 },     // Input Shaft 2: 2nd Drive Gear
-        { id: 2, x: 25, y: -110, fixed: true, mass: 1 },    // Shifter slider rail start
-        { id: 3, x: 25, y: 110, fixed: true, mass: 1 },     // Shifter slider rail end
-        { id: 4, x: 25, y: -50, fixed: false, mass: 1 },    // Shifter slider carriage & Shift Gear
-        { id: 5, x: 130, y: 0, fixed: true, mass: 1 },      // Shift Lever Fulcrum Pivot (FIXED pin)
-        { id: 6, x: 185, y: 10, fixed: false, mass: 1, isHandle: true }, // Shift Knob - drag LEFT/RIGHT
-        { id: 7, x: 130, y: -60, fixed: false, mass: 1 }    // Shift Lever Output Arm (drives slider)
-      ],
-      rods: [
-        { a: 7, b: 4, length: 110, width: 9, color: '#64748b' } // Linkage rod from lever to slider
-      ],
-      springs: [],
-      sliders: [
-        { node: 4, aNode: 2, bNode: 3, minT: 25, maxT: 195 }
-      ],
-      gears: [
-        { centerNode: 0, radius: 35, teeth: 14, meshWith: [] }, // Gear 0 (1st speed drive pinion)
-        { centerNode: 1, radius: 55, teeth: 22, meshWith: [] }, // Gear 1 (2nd speed drive gear)
-        { centerNode: 4, radius: 45, teeth: 18, meshWith: [] }  // Gear 2 (Movable shifter gear on slider)
-      ],
-      pulleys: [
-        { nodeId: 0, radius: 25 },
-        { nodeId: 1, radius: 25 }
-      ],
-      belts: [
-        { pulleyA: 0, pulleyB: 1, crossed: false, width: 8 }
-      ],
-      axles: [],
-      cams: [],
-      camContacts: [],
-      motors: [
-        { centerNode: 0, crankNode: 0, speed: 3.0, maxTorque: 8000 }
-      ],
-      brackets: [
-        { a: 6, b: 5, c: 7, width: 14, color: '#6366f1' } // Rigid shift lever (L-shaped, non-collinear)
-      ],
-      labels: [
-        { x: 155, y: -90, text: 'Drag knob to shift gears', fontSize: 11, color: '#6366f1', bold: false }
-      ]
-    },
+  // 9. Cam & Reciprocating Valve Follower (Desmodromic / Spring Return)
+  camFollower: {
+    version: '2.0',
+    nodes: [
+      { id: 0, x: 0, y: 0,   fixed: true, mass: 1 },  // Cam center (Camshaft)
+      { id: 1, x: 0, y: 63,  fixed: false, mass: 1 }, // Roller follower node
+      { id: 2, x: 0, y: 40,  fixed: true, mass: 1 },  // Valve guide bottom
+      { id: 3, x: 0, y: 140, fixed: true, mass: 1 },  // Valve guide top
+      { id: 4, x: 0, y: 150, fixed: true, mass: 1 }   // Return spring top anchor
+    ],
+    rods: [],
+    springs: [
+      { a: 1, b: 4, restLength: 60, stiffness: 220, width: 14, color: '#10b981' }
+    ],
+    sliders: [
+      { node: 1, aNode: 2, bNode: 3 }
+    ],
+    cams: [
+      { centerNode: 0, profileType: 'pear', baseRadius: 35, lift: 28, options: {} }
+    ],
+    camContacts: [
+      { camIdx: 0, followerNode: 1, rollerRadius: 8 }
+    ],
+    gears: [],
+    motors: [
+      { centerNode: 0, crankNode: 0, speed: 2.5 }
+    ],
+    brackets: [],
+    labels: [
+      { x: -65, y: -45, text: 'Camshaft (Teardrop / Pear Cam)', fontSize: 13, color: '#b45309', bold: true },
+      { x: 25,  y: 65,  text: 'Roller Follower & Guide Rails', fontSize: 13, color: '#047857', bold: true },
+      { x: 25,  y: 120, text: 'Helical Return Spring', fontSize: 13, color: '#4338ca', bold: true },
+      { x: -80, y: 185, text: 'Desmodromic Cam & Reciprocating Valve Follower', fontSize: 15, color: '#1e293b', bold: true }
+    ]
+  },
 
-    // 10. Clock Escapement & Pendulum Governor (Tooth Stepping & One-Way Ratchet)
-    escapement: {
-      version: '2.0',
-      nodes: [
-        { id: 0, x: 0, y: 35, fixed: true, mass: 1 },      // Escape Wheel Center Pivot
-        { id: 1, x: 0, y: -45, fixed: true, mass: 1 },     // Anchor Pallet Pivot
-        { id: 2, x: -38, y: -5, fixed: false, mass: 0.5 }, // Left Pallet (Entry)
-        { id: 3, x: 38, y: -5, fixed: false, mass: 0.5 },  // Right Pallet (Exit)
-        { id: 4, x: 20, y: 130, fixed: false, mass: 2.5 }, // Pendulum Bob (Heavy Mass)
-        { id: 5, x: -65, y: 130, fixed: true, mass: 1 },   // Left Spring Anchor
-        { id: 6, x: 65, y: 130, fixed: true, mass: 1 }     // Right Spring Anchor
-      ],
-      rods: [
-        { a: 1, b: 4, length: 175, width: 8, color: '#64748b' } // Pendulum Rod
-      ],
-      springs: [
-        { a: 5, b: 4, restLength: 55, stiffness: 140, width: 12, color: '#10b981' },
-        { a: 6, b: 4, restLength: 55, stiffness: 140, width: 12, color: '#10b981' }
-      ],
-      sliders: [],
-      gears: [],
-      pulleys: [],
-      belts: [],
-      axles: [],
-      genevas: [],
-      cams: [
-        { centerNode: 0, profileType: 'escapement', baseRadius: 40, lift: 18, options: { teeth: 8 } }
-      ],
-      camContacts: [
-        { camIdx: 0, followerNode: 2, rollerRadius: 6 },
-        { camIdx: 0, followerNode: 3, rollerRadius: 6 }
-      ],
-      motors: [
-        { centerNode: 0, crankNode: 0, speed: 2.2, maxTorque: 1200 }
-      ],
-      brackets: [
-        { a: 2, b: 1, c: 3, width: 12, color: '#6366f1' }, // Anchor Pallet Lever
-        { a: 2, b: 1, c: 4, width: 8, color: '#6366f1' }  // Anchor attached to Pendulum
-      ],
-      labels: [
-        { x: -90, y: -75, text: 'Anchor Pallet (Escapement)', fontSize: 13, bold: true, color: '#4338ca' },
-        { x: -100, y: 40, text: '8-Tooth Escape Wheel', fontSize: 12, color: '#0369a1' },
-        { x: -60, y: 155, text: 'Oscillating Pendulum', fontSize: 12, color: '#047857' }
-      ]
-    },
+  // 10. Stepped Pulley & Belt Drive (Open & Crossed Belts)
+  beltDrive: {
+    version: '2.0',
+    nodes: [
+      { id: 0, x: -100, y: 0, fixed: true, mass: 1 }, // Driver pulley
+      { id: 1, x: 10,   y: 0, fixed: true, mass: 1 }, // Jackshaft dual pulley
+      { id: 2, x: 120,  y: 0, fixed: true, mass: 1 }  // Driven output pulley
+    ],
+    rods: [],
+    sliders: [],
+    gears: [],
+    pulleys: [
+      { nodeId: 0, radius: 35 },
+      { nodeId: 1, radius: 22 },
+      { nodeId: 2, radius: 25 }
+    ],
+    belts: [
+      { pulleyA: 0, pulleyB: 1, crossed: false, width: 8 },
+      { pulleyA: 1, pulleyB: 2, crossed: true,  width: 7 }
+    ],
+    motors: [
+      { centerNode: 0, crankNode: 0, speed: 3.5 }
+    ],
+    brackets: [],
+    labels: [
+      { x: -125, y: -45, text: 'Drive Pulley (Motor)', fontSize: 13, color: '#b45309', bold: true },
+      { x: -35,  y: -55, text: 'Jackshaft Dual Pulleys', fontSize: 13, color: '#0369a1', bold: true },
+      { x: 85,   y: -45, text: 'Crossed Belt (Direction Reversal)', fontSize: 13, color: '#047857', bold: true },
+      { x: -60,  y: 80,  text: 'Two-Stage Stepped Belt Drive Transmission', fontSize: 15, color: '#1e293b', bold: true }
+    ]
+  },
 
-    // 11. Mechanism Showcase: several independent mechanisms demonstrating different features
-    // Layout: Slider-Crank (left), Gear Train (centre), Cam-Follower (right), Spring-Mass (bottom)
-    showcase: {
-      version: '2.0',
-      nodes: [
-        // --- Slider-Crank Piston (top-left) ---
-        { id: 0, x: -250, y: -120, fixed: true, mass: 1 },   // Crank pivot
-        { id: 1, x: -250, y: -180, fixed: false, mass: 1 },  // Crank pin
-        { id: 2, x: -130, y: -180, fixed: false, mass: 2 },  // Connecting rod / piston
-        { id: 3, x: -70,  y: -180, fixed: true, mass: 1 },   // Slider rail start
-        { id: 4, x: -310, y: -180, fixed: true, mass: 1 },   // Slider rail end
+  // 11. Interactive Shifting Gearbox (Deep Physical Interaction)
+  gearbox: {
+    version: '2.0',
+    nodes: [
+      { id: 0, x: -55, y: -50, fixed: true, mass: 1 },    // Input Shaft 1: 1st Drive Pinion
+      { id: 1, x: -75, y: 50,  fixed: true, mass: 1 },    // Input Shaft 2: 2nd Drive Gear
+      { id: 2, x: 25,  y: -110, fixed: true, mass: 1 },   // Shifter slider rail start
+      { id: 3, x: 25,  y: 110,  fixed: true, mass: 1 },   // Shifter slider rail end
+      { id: 4, x: 25,  y: -50, fixed: false, mass: 1 },   // Shifter slider carriage & Shift Gear
+      { id: 5, x: 130, y: 0,   fixed: true, mass: 1 },    // Shift Lever Fulcrum Pivot
+      { id: 6, x: 130, y: 80,  fixed: false, mass: 1, isHandle: true }, // Shift Knob (Drag to Shift)
+      { id: 7, x: 130, y: -50, fixed: false, mass: 1 }    // Shift Lever Output Linkage Arm
+    ],
+    rods: [
+      { a: 7, b: 4, length: 105, width: 9, color: '#64748b' } // Linkage rod from lever to slider
+    ],
+    springs: [],
+    sliders: [
+      { node: 4, aNode: 2, bNode: 3, minT: 25, maxT: 195 }
+    ],
+    gears: [
+      { centerNode: 0, radius: 35, teeth: 14, meshWith: [] }, // Gear 0 (1st speed drive pinion)
+      { centerNode: 1, radius: 55, teeth: 22, meshWith: [] }, // Gear 1 (2nd speed drive gear)
+      { centerNode: 4, radius: 45, teeth: 18, meshWith: [] }  // Gear 2 (Movable shifter gear on slider)
+    ],
+    pulleys: [
+      { nodeId: 0, radius: 25 },
+      { nodeId: 1, radius: 25 }
+    ],
+    belts: [
+      { pulleyA: 0, pulleyB: 1, crossed: false, width: 8 }
+    ],
+    axles: [],
+    cams: [],
+    camContacts: [],
+    motors: [
+      { centerNode: 0, crankNode: 0, speed: 3.0, maxTorque: 8000 }
+    ],
+    brackets: [
+      { a: 6, b: 5, c: 7, width: 14, color: '#6366f1' } // Rigid shift lever
+    ],
+    labels: [
+      { x: -115, y: -85, text: '1st Speed Pinion (35 mm)', fontSize: 13, color: '#b45309', bold: true },
+      { x: -135, y: 85,  text: '2nd Speed Gear (55 mm)', fontSize: 13, color: '#1d4ed8', bold: true },
+      { x: 55,   y: 110, text: 'Shift Knob (Drag up/down to shift gears)', fontSize: 13, color: '#2563eb', bold: true },
+      { x: -10,  y: -75, text: 'Sliding Cluster Gear (45 mm)', fontSize: 12, color: '#047857', bold: true },
+      { x: -80,  y: -130, text: 'Manual Transmission (Dynamic Proximity Gear Meshing)', fontSize: 15, color: '#1e293b', bold: true }
+    ]
+  },
 
-        // --- Compound Gear Train (top-centre) ---
-        { id: 5, x: 0,   y: -130, fixed: true, mass: 1 },   // Input pinion
-        { id: 6, x: 70,  y: -130, fixed: true, mass: 1 },   // Idler gear
-        { id: 7, x: 150, y: -130, fixed: true, mass: 1 },   // Output gear
+  // 12. Clock Anchor Escapement (Discrete Step Ticking)
+  escapement: {
+    version: '2.0',
+    nodes: [
+      { id: 0, x: 0,   y: 0,   fixed: true, mass: 1 },  // Escape wheel center
+      { id: 1, x: 0,   y: 75,  fixed: true, mass: 1 },  // Anchor pallet pivot
+      { id: 2, x: -35, y: 40,  fixed: false, mass: 1 }, // Left entry pallet
+      { id: 3, x: 35,  y: 40,  fixed: false, mass: 1 }, // Right exit pallet
+      { id: 4, x: 0,   y: 140, fixed: false, mass: 2 }, // Pendulum bob
+      { id: 5, x: 25,  y: 0,   fixed: false, mass: 1 }  // Motor crank pin
+    ],
+    rods: [
+      { a: 1, b: 4, length: 65, width: 6, color: '#94a3b8' } // Pendulum rod
+    ],
+    brackets: [
+      { a: 2, b: 1, c: 3, width: 12, color: '#6366f1' }     // Anchor pallet bracket
+    ],
+    gears: [
+      { centerNode: 0, radius: 50, teeth: 12, profile: 'ratchet' }
+    ],
+    motors: [
+      { centerNode: 0, crankNode: 5, speed: 1.5, maxTorque: 400 }
+    ],
+    sliders: [],
+    labels: [
+      { x: -70, y: -65, text: 'Ratchet Escape Wheel (Continuous Torque)', fontSize: 13, color: '#b45309', bold: true },
+      { x: -40, y: 95,  text: 'Rocking Anchor Pallets', fontSize: 13, color: '#4338ca', bold: true },
+      { x: -20, y: 165, text: 'Harmonic Pendulum', fontSize: 13, color: '#047857', bold: true },
+      { x: -80, y: -95, text: 'Deadbeat Clock Escapement (Discrete Step Ticking)', fontSize: 15, color: '#1e293b', bold: true }
+    ]
+  },
 
-        // --- Cam & Follower (top-right) ---
-        { id: 8,  x: 290, y: -130, fixed: true, mass: 1 },  // Cam center
-        { id: 9,  x: 290, y: -75, fixed: false, mass: 1 },   // Roller follower
-        { id: 10, x: 290, y: -100, fixed: true, mass: 1 },  // Follower guide top
-        { id: 11, x: 290, y: -40,  fixed: true, mass: 1 },  // Follower guide bottom
-        { id: 12, x: 290, y: 0,    fixed: true, mass: 1 },  // Spring bottom anchor
+  // 13. Over-Center Toggle Clamp (Deep Physical Interaction & Bistable Snap)
+  overcenter: {
+    version: '2.0',
+    nodes: [
+      { id: 0, x: -80, y: 0,   fixed: true, mass: 1 },  // Handle base pivot
+      { id: 1, x: 0,   y: -25, fixed: false, mass: 1 }, // Toggle knee joint
+      { id: 2, x: 75,  y: 0,   fixed: false, mass: 1 }, // Output clamp head
+      { id: 3, x: 20,  y: 0,   fixed: true, mass: 1 },  // Clamp guide rail start
+      { id: 4, x: 180, y: 0,   fixed: true, mass: 1 },  // Clamp guide rail end
+      { id: 5, x: 0,   y: 15,  fixed: true, mass: 1 },  // Mechanical stop pin
+      { id: 6, x: 0,   y: -85, fixed: true, mass: 1 }   // Bistable return spring anchor
+    ],
+    rods: [
+      { a: 0, b: 1, length: 83.8, width: 12, color: '#f59e0b' }, // Handle lever arm
+      { a: 1, b: 2, length: 79.1, width: 12, color: '#3b82f6' }  // Clamp toggle link
+    ],
+    springs: [
+      { a: 1, b: 6, restLength: 50, stiffness: 100, width: 12, color: '#10b981' }
+    ],
+    sliders: [
+      { node: 2, aNode: 3, bNode: 4, minT: 0, maxT: 150 }
+    ],
+    gears: [],
+    motors: [],
+    brackets: [],
+    labels: [
+      { x: -110, y: -30, text: 'Handle Base Pivot', fontSize: 13, color: '#64748b', bold: true },
+      { x: -30,  y: -50, text: 'Toggle Knee (Drag across center line to snap lock)', fontSize: 13, color: '#2563eb', bold: true },
+      { x: 60,   y: -30, text: 'Workpiece Clamp Piston', fontSize: 13, color: '#047857', bold: true },
+      { x: -90,  y: 60,  text: 'Over-Center Toggle Clamp (Bistable Mechanical Latch)', fontSize: 15, color: '#1e293b', bold: true }
+    ]
+  },
 
-        // --- Spring-Mass Oscillator (bottom-left) ---
-        { id: 13, x: -250, y: 50,  fixed: true, mass: 1 },  // Spring top anchor
-        { id: 14, x: -250, y: 150, fixed: false, mass: 3 }, // Mass (bob)
+  // 14. Mechanism Showcase Gallery (6 Independent Multi-Disciplinary Stations)
+  showcase: {
+    version: '2.0',
+    nodes: [
+      // Station 1: Slider-Crank Piston Engine (Top-Left)
+      { id: 0, x: -240, y: -120, fixed: true, mass: 1 },
+      { id: 1, x: -240, y: -165, fixed: false, mass: 1 },
+      { id: 2, x: -130, y: -120, fixed: false, mass: 2 },
+      { id: 3, x: -60,  y: -120, fixed: true, mass: 1 },
+      { id: 4, x: -300, y: -120, fixed: true, mass: 1 },
 
-        // --- Belt & Pulley drive (bottom-centre) ---
-        { id: 15, x: 20,  y: 60,  fixed: true, mass: 1 },  // Drive pulley
-        { id: 16, x: 130, y: 60,  fixed: true, mass: 1 },  // Driven pulley
+      // Station 2: Dual-Ratio Gear Train (Top-Center)
+      { id: 5, x: 0,   y: -120, fixed: true, mass: 1 },
+      { id: 6, x: 65,  y: -120, fixed: true, mass: 1 },
+      { id: 7, x: 135, y: -120, fixed: true, mass: 1 },
 
-        // --- 4-bar linkage (bottom-right) ---
-        { id: 17, x: 230, y: 60,   fixed: true, mass: 1 },  // Ground pivot A
-        { id: 18, x: 230, y: 15,   fixed: false, mass: 1 }, // Crank end
-        { id: 19, x: 320, y: -10,  fixed: false, mass: 1 }, // Coupler end
-        { id: 20, x: 360, y: 60,   fixed: true, mass: 1 }   // Ground pivot B
-      ],
-      rods: [
-        // Slider-crank
-        { a: 0, b: 1, length: 60, width: 9, color: '#f59e0b' },   // Crank arm
-        { a: 1, b: 2, length: 130, width: 8, color: '#64748b' },   // Connecting rod
+      // Station 3: Cam & Spring Follower Valve (Top-Right)
+      { id: 8,  x: 280, y: -120, fixed: true, mass: 1 },
+      { id: 9,  x: 280, y: -65,  fixed: false, mass: 1 },
+      { id: 10, x: 280, y: -90,  fixed: true, mass: 1 },
+      { id: 11, x: 280, y: -30,  fixed: true, mass: 1 },
+      { id: 12, x: 280, y: 0,    fixed: true, mass: 1 },
 
-        // 4-bar linkage
-        { a: 17, b: 18, length: 45, width: 9, color: '#f59e0b' },  // Crank
-        { a: 18, b: 19, length: 95, width: 8, color: '#64748b' },  // Coupler
-        { a: 19, b: 20, length: 80, width: 9, color: '#10b981' }   // Follower
-      ],
-      springs: [
-        // Spring-mass oscillator
-        { a: 13, b: 14, restLength: 60, stiffness: 120, width: 14, color: '#10b981' },
-        // Cam follower return spring
-        { a: 9, b: 12, restLength: 35, stiffness: 250, width: 10, color: '#6366f1' }
-      ],
-      sliders: [
-        { node: 2, aNode: 3, bNode: 4 },   // Piston slider rail
-        { node: 9, aNode: 10, bNode: 11 }  // Cam follower vertical guide
-      ],
-      gears: [
-        { centerNode: 5, radius: 30, teeth: 12, meshWith: [1] },   // Input pinion
-        { centerNode: 6, radius: 50, teeth: 20, meshWith: [0, 2] },// Idler
-        { centerNode: 7, radius: 35, teeth: 14, meshWith: [1] }    // Output
-      ],
-      pulleys: [
-        { nodeId: 15, radius: 28 },
-        { nodeId: 16, radius: 18 }
-      ],
-      belts: [
-        { pulleyA: 0, pulleyB: 1, crossed: false, width: 7 }
-      ],
-      axles: [],
-      genevas: [],
-      cams: [
-        { centerNode: 8, profileType: 'pear', baseRadius: 30, lift: 25, options: {} }
-      ],
-      camContacts: [
-        { camIdx: 0, followerNode: 9, rollerRadius: 8 }
-      ],
-      motors: [
-        { centerNode: 0, crankNode: 1, speed: 2.5 },    // Drives slider-crank
-        { centerNode: 5, crankNode: 5, speed: 2.0 },    // Drives gear train
-        { centerNode: 8, crankNode: 8, speed: 1.8 },    // Drives cam
-        { centerNode: 15, crankNode: 15, speed: 3.0 },  // Drives belt
-        { centerNode: 17, crankNode: 18, speed: 1.5 }   // Drives 4-bar linkage
-      ],
-      brackets: [],
-      labels: [
-        { x: -310, y: -230, text: 'Slider-Crank Piston Engine', fontSize: 13, color: '#b45309', bold: true },
-        { x: -55,  y: -230, text: 'Compound Gear Train', fontSize: 13, color: '#1d4ed8', bold: true },
-        { x: 225,  y: -230, text: 'Cam + Follower Valve', fontSize: 13, color: '#6d28d9', bold: true },
-        { x: -310, y: 0,    text: 'Spring-Mass Oscillator', fontSize: 13, color: '#047857', bold: true },
-        { x: -55,  y: 0,    text: 'Belt & Pulley Drive', fontSize: 13, color: '#0369a1', bold: true },
-        { x: 185,  y: 0,    text: '4-Bar Linkage', fontSize: 13, color: '#b45309', bold: true }
-      ]
-    }
-  };
+      // Station 4: Spring-Mass Harmonic Oscillator (Bottom-Left)
+      { id: 13, x: -240, y: 40,  fixed: true, mass: 1 },
+      { id: 14, x: -240, y: 130, fixed: false, mass: 3 },
+
+      // Station 5: Pulley & Belt Transmission (Bottom-Center)
+      { id: 15, x: 10,  y: 75, fixed: true, mass: 1 },
+      { id: 16, x: 120, y: 75, fixed: true, mass: 1 },
+
+      // Station 6: Grashof Four-Bar Linkage (Bottom-Right)
+      { id: 17, x: 230, y: 75, fixed: true, mass: 1 },
+      { id: 18, x: 230, y: 30, fixed: false, mass: 1 },
+      { id: 19, x: 320, y: 5,  fixed: false, mass: 1 },
+      { id: 20, x: 360, y: 75, fixed: true, mass: 1 }
+    ],
+    rods: [
+      // Slider-Crank
+      { a: 0, b: 1, length: 45, width: 9, color: '#f59e0b' },
+      { a: 1, b: 2, length: 120, width: 8, color: '#64748b' },
+      // Four-Bar Linkage
+      { a: 17, b: 18, length: 45, width: 9, color: '#f59e0b' },
+      { a: 18, b: 19, length: 95, width: 8, color: '#64748b' },
+      { a: 19, b: 20, length: 80, width: 9, color: '#10b981' }
+    ],
+    springs: [
+      { a: 13, b: 14, restLength: 60, stiffness: 120, width: 14, color: '#10b981' },
+      { a: 9,  b: 12, restLength: 35, stiffness: 250, width: 10, color: '#6366f1' }
+    ],
+    sliders: [
+      { node: 2, aNode: 3, bNode: 4 },
+      { node: 9, aNode: 10, bNode: 11 }
+    ],
+    gears: [
+      { centerNode: 5, radius: 28, teeth: 12, meshWith: [1] },
+      { centerNode: 6, radius: 42, teeth: 18, meshWith: [0, 2] },
+      { centerNode: 7, radius: 28, teeth: 12, meshWith: [1] }
+    ],
+    pulleys: [
+      { nodeId: 15, radius: 28 },
+      { nodeId: 16, radius: 18 }
+    ],
+    belts: [
+      { pulleyA: 0, pulleyB: 1, crossed: false, width: 7 }
+    ],
+    axles: [],
+    genevas: [],
+    cams: [
+      { centerNode: 8, profileType: 'pear', baseRadius: 30, lift: 25, options: {} }
+    ],
+    camContacts: [
+      { camIdx: 0, followerNode: 9, rollerRadius: 8 }
+    ],
+    motors: [
+      { centerNode: 0,  crankNode: 1,  speed: 2.5 },
+      { centerNode: 5,  crankNode: 5,  speed: 2.0 },
+      { centerNode: 8,  crankNode: 8,  speed: 1.8 },
+      { centerNode: 15, crankNode: 15, speed: 3.0 },
+      { centerNode: 17, crankNode: 18, speed: 1.5 }
+    ],
+    brackets: [],
+    labels: [
+      { x: -300, y: -210, text: 'Slider-Crank Piston Engine', fontSize: 13, color: '#b45309', bold: true },
+      { x: -50,  y: -210, text: 'Compound Gear Train', fontSize: 13, color: '#1d4ed8', bold: true },
+      { x: 220,  y: -210, text: 'Cam & Follower Valve', fontSize: 13, color: '#6d28d9', bold: true },
+      { x: -300, y: 0,    text: 'Spring-Mass Oscillator', fontSize: 13, color: '#047857', bold: true },
+      { x: -50,  y: 0,    text: 'Belt & Pulley Drive', fontSize: 13, color: '#0369a1', bold: true },
+      { x: 180,  y: 0,    text: 'Four-Bar Linkage', fontSize: 13, color: '#b45309', bold: true }
+    ]
+  }
+};
 
   return MechanismEditor;
 });
