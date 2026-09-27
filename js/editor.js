@@ -2211,8 +2211,8 @@
     ctx.restore();
   };
 
-  MechanismEditor.Presets = // Full suite of 14 recreated, clean mechanical presets
-module.exports = {
+  // Full suite of 14 recreated, clean mechanical presets
+  MechanismEditor.Presets = {
   // 1. Grashof Four-Bar Crank-Rocker Linkage
   fourbar: {
     version: '2.0',

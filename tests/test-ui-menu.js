@@ -100,4 +100,25 @@ console.log('Running UI Context Menu & CSS Sanity Test Suite...');
   console.log('PASS: showContextMenu correctly positions radial menu at cursor with 30px edge clamping');
 }
 
-console.log('All UI context menu tests passed!');
+// Test 3: Browser global scope script loading without module or exports
+{
+  const files = ['js/math2d.js', 'js/physics.js', 'js/timeline.js', 'js/sprites.js', 'js/editor.js', 'js/api.js'];
+  const fakeWindow = {};
+
+  files.forEach(f => {
+    const code = fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
+    const fn = new Function('window', 'globalThis', 'Math2D', 'PhysicsSystem', 'PhysicsTimeline', 'SpriteRenderer', 'MechanismEditor', 'LinksimAPI', 'exports', 'module', code);
+    assert.doesNotThrow(() => {
+      fn(fakeWindow, fakeWindow, fakeWindow.Math2D, fakeWindow.PhysicsSystem, fakeWindow.PhysicsTimeline, fakeWindow.SpriteRenderer, fakeWindow.MechanismEditor, fakeWindow.LinksimAPI, undefined, undefined);
+    }, `Failed to execute ${f} in browser environment where module is undefined`);
+  });
+
+  assert(fakeWindow.MechanismEditor, 'MechanismEditor must be exported to window in browser environment');
+  assert(fakeWindow.MechanismEditor.Presets, 'MechanismEditor.Presets must be defined');
+  assert.strictEqual(Object.keys(fakeWindow.MechanismEditor.Presets).length, 14, 'MechanismEditor.Presets must contain 14 presets');
+
+  console.log('PASS: All scripts evaluate cleanly in browser scope without module/exports');
+}
+
+console.log('All UI context menu and browser loading tests passed!');
+
