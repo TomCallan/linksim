@@ -535,9 +535,8 @@
     radialMenuEl.style.display = 'block';
 
     // Position radial menu safely inside screen bounds
-    var rMax = 140;
-    var cx = Math.max(rMax + 10, Math.min(window.innerWidth - rMax - 10, clientX));
-    var cy = Math.max(rMax + 10, Math.min(window.innerHeight - rMax - 10, clientY));
+    var cx = Math.max(30, Math.min(window.innerWidth - 30, clientX));
+    var cy = Math.max(30, Math.min(window.innerHeight - 30, clientY));
     radialMenuEl.style.left = cx + 'px';
     radialMenuEl.style.top = cy + 'px';
 
