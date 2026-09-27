@@ -7,7 +7,9 @@
     var Math2D = require('./math2d.js');
     module.exports = factory(Math2D);
   } else {
-    root.Physics = factory(root.Math2D);
+    var cls = factory(root.Math2D);
+    root.PhysicsSystem = cls;
+    root.Physics = cls;
   }
 })(typeof globalThis !== 'undefined' ? globalThis : this, function(Math2D) {
   'use strict';
