@@ -70,6 +70,31 @@
 
     clamp: function(val, min, max) {
       return val < min ? min : (val > max ? max : val);
+    },
+
+    normalizeAngle: function(a) {
+      var twoPi = Math.PI * 2;
+      a = a % twoPi;
+      if (a > Math.PI) a -= twoPi;
+      if (a < -Math.PI) a += twoPi;
+      return a;
+    },
+
+    /**
+     * Compute exact meshing angle of gear 2 given gear 1 and their centers.
+     * The tooth of gear 1 meshes into the tooth root space of gear 2.
+     */
+    calcMeshedAngle: function(c1x, c1y, teeth1, angle1, c2x, c2y, teeth2) {
+      // Angle of line of centers from gear 1 to gear 2
+      var phi = Math.atan2(c2y - c1y, c2x - c1x);
+      // Tooth pitch for gear 2
+      var pitch2 = (Math.PI * 2) / teeth2;
+      // Ratio
+      var ratio = -teeth1 / teeth2;
+      // Phase at contact point
+      var relAngle1 = angle1 - phi;
+      var targetAngle2 = ratio * relAngle1 + (phi + Math.PI) + (pitch2 * 0.5);
+      return Math2D.normalizeAngle(targetAngle2);
     }
   };
 

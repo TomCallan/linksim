@@ -1,6 +1,7 @@
 /**
- * Interactive Mechanism Blueprint Editor & Preset Library for Linksim.
- * Manages placement of nodes, pins, rods, sliders, gears, and motors on the left canvas.
+ * Interactive Mechanism Blueprint Editor & Unified Canvas Controller for Linksim.
+ * Supports fluid drag-to-connect drawing, accurate coordinate mapping,
+ * gear parenting, rigid brackets, and right-click context menus.
  */
 (function(root, factory) {
   if (typeof exports === 'object' && typeof module !== 'undefined') {
@@ -21,34 +22,62 @@
     this.renderer = new SpriteRenderer();
 
     // Editor data model
-    this.nodes = [];     // [{ id, x, y, fixed, mass }]
-    this.rods = [];      // [{ a, b, length, width, color }]
-    this.sliders = [];   // [{ node, aNode, bNode, minT, maxT }]
-    this.gears = [];     // [{ centerNode, radius, teeth, meshWith: [] }]
-    this.motors = [];    // [{ centerNode, crankNode, speed }]
+    this.nodes = [];          // [{ id, x, y, fixed, mass, parentGear: { gearIdx, radius, angleOffset } }]
+    this.rods = [];           // [{ a, b, length, width, color }]
+    this.sliders = [];        // [{ node, aNode, bNode, minT, maxT }]
+    this.gears = [];          // [{ centerNode, radius, teeth, meshWith: [] }]
+    this.motors = [];         // [{ centerNode, crankNode, speed }]
+    this.brackets = [];       // [{ a, b, c, width, color }]
 
     // Viewport pan/zoom
     this.panX = canvas.width / 2;
     this.panY = canvas.height / 2;
     this.zoom = 1.0;
 
-    // Interaction state
-    this.activeTool = 'select'; // 'select', 'add_node', 'add_pin', 'add_rod', 'add_slider', 'add_gear', 'add_motor', 'delete'
+    // Mode: 'edit' or 'simulate'
+    this.mode = 'edit';
+
+    // Tool state
+    this.activeTool = 'select'; // 'select', 'add_pin', 'add_node', 'add_rod', 'add_slider', 'add_gear', 'add_motor', 'add_bracket', 'delete'
     this.selectedNodeId = -1;
-    this.pendingAction = null; // { tool, step, data }
     this.hoverNodeId = -1;
+    this.hoverGearIdx = -1;
+    this.hoverRodIdx = -1;
+
+    // Interaction flags
     this.isDragging = false;
+    this.isConnecting = false;
+    this.connectStartNode = -1;
+    this.mouseWorldX = 0;
+    this.mouseWorldY = 0;
+
     this.isPanning = false;
-    this.dragStartX = 0;
-    this.dragStartY = 0;
+    this.panStartX = 0;
+    this.panStartY = 0;
+
+    // Manual gear turning in simulate mode
+    this.isTurningGear = false;
+    this.turningGearIdx = -1;
+    this.prevGearMouseAngle = 0;
+
+    // Undo stack
+    this.undoStack = [];
+
+    // Context menu callback: fn(x, y, targetType, targetData)
+    this.onShowContextMenu = null;
 
     this._bindEvents();
   }
 
-  MechanismEditor.prototype.screenToWorld = function(sx, sy) {
+  MechanismEditor.prototype.screenToWorld = function(clientX, clientY) {
+    var rect = this.canvas.getBoundingClientRect();
+    var scaleX = this.canvas.width / rect.width;
+    var scaleY = this.canvas.height / rect.height;
+    var canvasPx = (clientX - rect.left) * scaleX;
+    var canvasPy = (clientY - rect.top) * scaleY;
     return {
-      x: (sx - this.panX) / this.zoom,
-      y: (sy - this.panY) / this.zoom
+      x: (canvasPx - this.panX) / this.zoom,
+      y: (canvasPy - this.panY) / this.zoom
     };
   };
 
@@ -59,8 +88,20 @@
     };
   };
 
+  MechanismEditor.prototype.saveState = function() {
+    this.undoStack.push(this.exportJSON());
+    if (this.undoStack.length > 30) this.undoStack.shift();
+  };
+
+  MechanismEditor.prototype.undo = function() {
+    if (this.undoStack.length > 0) {
+      var prev = this.undoStack.pop();
+      this.loadJSON(prev);
+    }
+  };
+
   MechanismEditor.prototype.findNodeNear = function(wx, wy, threshold) {
-    threshold = (threshold || 15) / this.zoom;
+    threshold = (threshold || 16) / this.zoom;
     var threshSq = threshold * threshold;
     var closestId = -1;
     var closestDistSq = Infinity;
@@ -76,24 +117,75 @@
     return closestId;
   };
 
+  MechanismEditor.prototype.findGearNear = function(wx, wy) {
+    for (var i = this.gears.length - 1; i >= 0; i--) {
+      var g = this.gears[i];
+      var cNode = this.getNodeById(g.centerNode);
+      if (cNode) {
+        var d = Math2D.dist(wx, wy, cNode.x, cNode.y);
+        if (d <= g.radius * 1.2) {
+          return i;
+        }
+      }
+    }
+    return -1;
+  };
+
+  MechanismEditor.prototype.findRodNear = function(wx, wy, threshold) {
+    threshold = (threshold || 10) / this.zoom;
+    for (var i = this.rods.length - 1; i >= 0; i--) {
+      var r = this.rods[i];
+      var na = this.getNodeById(r.a);
+      var nb = this.getNodeById(r.b);
+      if (na && nb) {
+        var proj = [];
+        Math2D.projectPointOnLine(wx, wy, na.x, na.y, nb.x, nb.y, proj);
+        if (proj[2] >= 0 && proj[2] <= 1) {
+          var d = Math2D.dist(wx, wy, proj[0], proj[1]);
+          if (d <= threshold) return i;
+        }
+      }
+    }
+    return -1;
+  };
+
+  MechanismEditor.prototype.getNodeById = function(id) {
+    for (var i = 0; i < this.nodes.length; i++) {
+      if (this.nodes[i].id === id) return this.nodes[i];
+    }
+    return null;
+  };
+
   MechanismEditor.prototype.setTool = function(tool) {
     this.activeTool = tool;
-    this.pendingAction = null;
-    this.selectedNodeId = -1;
+    this.isConnecting = false;
+    this.connectStartNode = -1;
     this.render();
   };
 
   MechanismEditor.prototype.addNode = function(wx, wy, fixed) {
+    this.saveState();
     var id = this.nodes.length;
-    this.nodes.push({
+    var node = {
       id: id,
       x: Math.round(wx),
       y: Math.round(wy),
       fixed: !!fixed,
-      mass: 1.0
-    });
+      mass: 1.0,
+      parentGear: null
+    };
+    this.nodes.push(node);
     this._notifyChange();
     return id;
+  };
+
+  MechanismEditor.prototype.toggleFixed = function(nodeId) {
+    var n = this.getNodeById(nodeId);
+    if (n) {
+      this.saveState();
+      n.fixed = !n.fixed;
+      this._notifyChange();
+    }
   };
 
   MechanismEditor.prototype.addRod = function(aId, bId, style) {
@@ -106,18 +198,34 @@
     var nb = this.getNodeById(bId);
     if (!na || !nb) return;
 
+    this.saveState();
     var len = Math2D.dist(na.x, na.y, nb.x, nb.y);
     this.rods.push({
       a: aId,
       b: bId,
       length: len,
-      width: (style && style.width) || 10,
+      width: (style && style.width) || 12,
       color: (style && style.color) || '#3b82f6'
     });
     this._notifyChange();
   };
 
+  MechanismEditor.prototype.addRigidBracket = function(aId, bId, cId) {
+    if (aId === bId || bId === cId || aId === cId) return;
+    this.saveState();
+    this.addRod(aId, bId);
+    this.addRod(bId, cId);
+    var na = this.getNodeById(aId);
+    var nc = this.getNodeById(cId);
+    if (na && nc) {
+      this.addRod(aId, cId, { width: 4, color: 'rgba(99, 102, 241, 0.2)' });
+    }
+    this.brackets.push({ a: aId, b: bId, c: cId, width: 14, color: '#6366f1' });
+    this._notifyChange();
+  };
+
   MechanismEditor.prototype.addSlider = function(nodeId, aNodeId, bNodeId) {
+    this.saveState();
     this.sliders.push({
       node: nodeId,
       aNode: aNodeId,
@@ -129,30 +237,74 @@
   };
 
   MechanismEditor.prototype.addGear = function(centerId, radius, teeth) {
+    this.saveState();
+    var cNode = this.getNodeById(centerId);
+    if (!cNode) return;
+    cNode.fixed = true; // Gears have fixed shafts
+
+    radius = radius || 45;
+    teeth = teeth || Math.max(8, Math.round(radius / 3));
+
+    var gearIdx = this.gears.length;
     var gear = {
       centerNode: centerId,
-      radius: radius || 40,
-      teeth: teeth || 16,
+      radius: radius,
+      teeth: teeth,
       meshWith: []
     };
-    // Auto mesh with nearby gears if pitch circles touch
-    var cNode = this.getNodeById(centerId);
+
+    // Auto-mesh with existing gears if pitch radii intersect or touch
     for (var i = 0; i < this.gears.length; i++) {
       var other = this.gears[i];
       var oNode = this.getNodeById(other.centerNode);
-      if (cNode && oNode) {
+      if (oNode) {
         var d = Math2D.dist(cNode.x, cNode.y, oNode.x, oNode.y);
-        if (Math.abs(d - (gear.radius + other.radius)) < 15) {
+        var targetDist = gear.radius + other.radius;
+        if (Math.abs(d - targetDist) < 20) {
           gear.meshWith.push(i);
-          other.meshWith.push(this.gears.length);
+          other.meshWith.push(gearIdx);
         }
       }
     }
+
     this.gears.push(gear);
     this._notifyChange();
   };
 
+  MechanismEditor.prototype.attachNodeToGear = function(nodeId, gearIdx) {
+    var gear = this.gears[gearIdx];
+    var node = this.getNodeById(nodeId);
+    if (!gear || !node) return;
+    var cNode = this.getNodeById(gear.centerNode);
+    if (!cNode) return;
+
+    this.saveState();
+    var r = Math2D.dist(cNode.x, cNode.y, node.x, node.y);
+    var angleOffset = Math.atan2(node.y - cNode.y, node.x - cNode.x);
+    node.parentGear = {
+      gearIdx: gearIdx,
+      radius: r,
+      angleOffset: angleOffset
+    };
+    this._notifyChange();
+  };
+
+  MechanismEditor.prototype.addCrankpinOnGear = function(gearIdx) {
+    var gear = this.gears[gearIdx];
+    if (!gear) return;
+    var cNode = this.getNodeById(gear.centerNode);
+    if (!cNode) return;
+
+    this.saveState();
+    var pinRadius = gear.radius * 0.75;
+    var pinX = cNode.x + pinRadius;
+    var pinY = cNode.y;
+    var pinId = this.addNode(pinX, pinY, false);
+    this.attachNodeToGear(pinId, gearIdx);
+  };
+
   MechanismEditor.prototype.addMotor = function(centerId, crankId, speed) {
+    this.saveState();
     this.motors.push({
       centerNode: centerId,
       crankNode: crankId,
@@ -161,61 +313,59 @@
     this._notifyChange();
   };
 
-  MechanismEditor.prototype.getNodeById = function(id) {
-    for (var i = 0; i < this.nodes.length; i++) {
-      if (this.nodes[i].id === id) return this.nodes[i];
+  MechanismEditor.prototype.deleteElementAt = function(wx, wy) {
+    var nearNode = this.findNodeNear(wx, wy, 16);
+    if (nearNode !== -1) {
+      this.deleteNode(nearNode);
+      return;
     }
-    return null;
+    var nearRod = this.findRodNear(wx, wy, 12);
+    if (nearRod !== -1) {
+      this.saveState();
+      this.rods.splice(nearRod, 1);
+      this._notifyChange();
+      return;
+    }
+    var nearGear = this.findGearNear(wx, wy);
+    if (nearGear !== -1) {
+      this.deleteGear(nearGear);
+      return;
+    }
+  };
+
+  MechanismEditor.prototype.deleteNode = function(id) {
+    this.saveState();
+    this.rods = this.rods.filter(function(r) { return r.a !== id && r.b !== id; });
+    this.sliders = this.sliders.filter(function(s) { return s.node !== id && s.aNode !== id && s.bNode !== id; });
+    this.gears = this.gears.filter(function(g) { return g.centerNode !== id; });
+    this.motors = this.motors.filter(function(m) { return m.centerNode !== id && m.crankNode !== id; });
+    this.brackets = this.brackets.filter(function(b) { return b.a !== id && b.b !== id && b.c !== id; });
+    this.nodes = this.nodes.filter(function(n) { return n.id !== id; });
+    this._notifyChange();
+  };
+
+  MechanismEditor.prototype.deleteGear = function(gearIdx) {
+    this.saveState();
+    this.gears.splice(gearIdx, 1);
+    // Remove mesh connections
+    for (var i = 0; i < this.gears.length; i++) {
+      this.gears[i].meshWith = this.gears[i].meshWith
+        .filter(function(idx) { return idx !== gearIdx; })
+        .map(function(idx) { return idx > gearIdx ? idx - 1 : idx; });
+    }
+    this._notifyChange();
   };
 
   MechanismEditor.prototype.clear = function() {
+    this.saveState();
     this.nodes = [];
     this.rods = [];
     this.sliders = [];
     this.gears = [];
     this.motors = [];
+    this.brackets = [];
     this.selectedNodeId = -1;
-    this.pendingAction = null;
-    this._notifyChange();
-  };
-
-  MechanismEditor.prototype.deleteElementAt = function(wx, wy) {
-    var nearNode = this.findNodeNear(wx, wy, 15);
-    if (nearNode !== -1) {
-      this.deleteNode(nearNode);
-      return;
-    }
-    // Delete rod if clicked near line
-    for (var r = this.rods.length - 1; r >= 0; r--) {
-      var rod = this.rods[r];
-      var na = this.getNodeById(rod.a);
-      var nb = this.getNodeById(rod.b);
-      if (na && nb) {
-        var proj = [];
-        Math2D.projectPointOnLine(wx, wy, na.x, na.y, nb.x, nb.y, proj);
-        if (proj[2] >= 0 && proj[2] <= 1) {
-          var dist = Math2D.dist(wx, wy, proj[0], proj[1]);
-          if (dist < 10 / this.zoom) {
-            this.rods.splice(r, 1);
-            this._notifyChange();
-            return;
-          }
-        }
-      }
-    }
-  };
-
-  MechanismEditor.prototype.deleteNode = function(id) {
-    // Remove attached rods
-    this.rods = this.rods.filter(function(r) { return r.a !== id && r.b !== id; });
-    // Remove attached sliders
-    this.sliders = this.sliders.filter(function(s) { return s.node !== id && s.aNode !== id && s.bNode !== id; });
-    // Remove gears
-    this.gears = this.gears.filter(function(g) { return g.centerNode !== id; });
-    // Remove motors
-    this.motors = this.motors.filter(function(m) { return m.centerNode !== id && m.crankNode !== id; });
-    // Remove node
-    this.nodes = this.nodes.filter(function(n) { return n.id !== id; });
+    this.isConnecting = false;
     this._notifyChange();
   };
 
@@ -233,18 +383,21 @@
       rods: JSON.parse(JSON.stringify(this.rods)),
       sliders: JSON.parse(JSON.stringify(this.sliders)),
       gears: JSON.parse(JSON.stringify(this.gears)),
-      motors: JSON.parse(JSON.stringify(this.motors))
+      motors: JSON.parse(JSON.stringify(this.motors)),
+      brackets: JSON.parse(JSON.stringify(this.brackets))
     };
   };
 
   MechanismEditor.prototype.loadJSON = function(data) {
-    this.clear();
     if (!data) return;
     this.nodes = data.nodes || [];
     this.rods = data.rods || [];
     this.sliders = data.sliders || [];
     this.gears = data.gears || [];
     this.motors = data.motors || [];
+    this.brackets = data.brackets || [];
+    this.selectedNodeId = -1;
+    this.isConnecting = false;
     this._notifyChange();
   };
 
@@ -253,83 +406,132 @@
     var canvas = this.canvas;
 
     canvas.addEventListener('mousedown', function(e) {
-      var rect = canvas.getBoundingClientRect();
-      var sx = e.clientX - rect.left;
-      var sy = e.clientY - rect.top;
-      var w = self.screenToWorld(sx, sy);
+      var w = self.screenToWorld(e.clientX, e.clientY);
+      self.mouseWorldX = w.x;
+      self.mouseWorldY = w.y;
 
-      // Middle button or right button = pan
-      if (e.button === 1 || e.button === 2) {
+      // Right Click = Context Menu
+      if (e.button === 2) {
+        e.preventDefault();
+        var nearNode = self.findNodeNear(w.x, w.y);
+        var nearRod = self.findRodNear(w.x, w.y);
+        var nearGear = self.findGearNear(w.x, w.y);
+
+        var targetType = 'empty';
+        var targetData = { x: w.x, y: w.y };
+
+        if (nearNode !== -1) {
+          targetType = 'node';
+          targetData = self.getNodeById(nearNode);
+        } else if (nearGear !== -1) {
+          targetType = 'gear';
+          targetData = { index: nearGear, gear: self.gears[nearGear] };
+        } else if (nearRod !== -1) {
+          targetType = 'rod';
+          targetData = { index: nearRod, rod: self.rods[nearRod] };
+        }
+
+        if (self.onShowContextMenu) {
+          self.onShowContextMenu(e.clientX, e.clientY, targetType, targetData);
+        }
+        return;
+      }
+
+      // Middle Button = Pan View
+      if (e.button === 1) {
         self.isPanning = true;
-        self.dragStartX = sx - self.panX;
-        self.dragStartY = sy - self.panY;
+        self.panStartX = e.clientX - self.panX;
+        self.panStartY = e.clientY - self.panY;
         e.preventDefault();
         return;
       }
 
+      // Left Click
       var nearNode = self.findNodeNear(w.x, w.y);
+      var nearGear = self.findGearNear(w.x, w.y);
 
+      // In Simulate Mode: Direct Hand Interaction
+      if (self.mode === 'simulate') {
+        if (nearGear !== -1) {
+          var g = self.gears[nearGear];
+          var cNode = self.getNodeById(g.centerNode);
+          if (cNode) {
+            self.isTurningGear = true;
+            self.turningGearIdx = nearGear;
+            self.prevGearMouseAngle = Math.atan2(w.y - cNode.y, w.x - cNode.x);
+            return;
+          }
+        }
+        if (nearNode !== -1) {
+          self.selectedNodeId = nearNode;
+          self.isDragging = true;
+          return;
+        }
+        self.isPanning = true;
+        self.panStartX = e.clientX - self.panX;
+        self.panStartY = e.clientY - self.panY;
+        return;
+      }
+
+      // In Edit Mode
       switch (self.activeTool) {
         case 'select':
           if (nearNode !== -1) {
             self.selectedNodeId = nearNode;
             self.isDragging = true;
           } else {
-            // Drag background to pan
             self.isPanning = true;
-            self.dragStartX = sx - self.panX;
-            self.dragStartY = sy - self.panY;
+            self.panStartX = e.clientX - self.panX;
+            self.panStartY = e.clientY - self.panY;
           }
-          break;
-
-        case 'add_node':
-          self.addNode(w.x, w.y, false);
           break;
 
         case 'add_pin':
           self.addNode(w.x, w.y, true);
           break;
 
+        case 'add_node':
+          self.addNode(w.x, w.y, false);
+          break;
+
         case 'add_rod':
+          // Fluid Drag-to-Connect: Start dragging from node, or create node if clicking empty space
           if (nearNode !== -1) {
-            if (!self.pendingAction) {
-              self.pendingAction = { tool: 'add_rod', fromNode: nearNode };
-            } else if (self.pendingAction.fromNode !== nearNode) {
-              self.addRod(self.pendingAction.fromNode, nearNode);
-              self.pendingAction = null;
-            }
+            self.connectStartNode = nearNode;
+            self.isConnecting = true;
+          } else {
+            var newId = self.addNode(w.x, w.y, false);
+            self.connectStartNode = newId;
+            self.isConnecting = true;
           }
           break;
 
         case 'add_slider':
-          if (!self.pendingAction) {
-            if (nearNode !== -1) {
-              self.pendingAction = { tool: 'add_slider', step: 1, aNode: nearNode };
+          if (nearNode !== -1) {
+            if (!self._sliderRailStart) {
+              self._sliderRailStart = nearNode;
+            } else if (self._sliderRailStart !== nearNode) {
+              var sNode = self.addNode((self.getNodeById(self._sliderRailStart).x + self.getNodeById(nearNode).x) / 2,
+                                       (self.getNodeById(self._sliderRailStart).y + self.getNodeById(nearNode).y) / 2, false);
+              self.addSlider(sNode, self._sliderRailStart, nearNode);
+              self._sliderRailStart = null;
             }
-          } else if (self.pendingAction.step === 1 && nearNode !== -1 && nearNode !== self.pendingAction.aNode) {
-            self.pendingAction.bNode = nearNode;
-            self.pendingAction.step = 2;
-          } else if (self.pendingAction.step === 2) {
-            var sNode = nearNode !== -1 ? nearNode : self.addNode(w.x, w.y, false);
-            self.addSlider(sNode, self.pendingAction.aNode, self.pendingAction.bNode);
-            self.pendingAction = null;
           }
           break;
 
         case 'add_gear':
-          if (nearNode !== -1) {
-            self.addGear(nearNode, 40, 16);
-          }
+          var gCenter = nearNode !== -1 ? nearNode : self.addNode(w.x, w.y, true);
+          self.addGear(gCenter, 45, 15);
           break;
 
         case 'add_motor':
-          if (!self.pendingAction) {
-            if (nearNode !== -1) {
-              self.pendingAction = { tool: 'add_motor', centerNode: nearNode };
+          if (nearNode !== -1) {
+            if (!self._motorCenter) {
+              self._motorCenter = nearNode;
+            } else if (self._motorCenter !== nearNode) {
+              self.addMotor(self._motorCenter, nearNode);
+              self._motorCenter = null;
             }
-          } else if (nearNode !== -1 && nearNode !== self.pendingAction.centerNode) {
-            self.addMotor(self.pendingAction.centerNode, nearNode);
-            self.pendingAction = null;
           }
           break;
 
@@ -341,26 +543,46 @@
     });
 
     canvas.addEventListener('mousemove', function(e) {
-      var rect = canvas.getBoundingClientRect();
-      var sx = e.clientX - rect.left;
-      var sy = e.clientY - rect.top;
+      var w = self.screenToWorld(e.clientX, e.clientY);
+      self.mouseWorldX = w.x;
+      self.mouseWorldY = w.y;
 
       if (self.isPanning) {
-        self.panX = sx - self.dragStartX;
-        self.panY = sy - self.dragStartY;
+        self.panX = e.clientX - self.panStartX;
+        self.panY = e.clientY - self.panStartY;
         self.render();
         return;
       }
 
-      var w = self.screenToWorld(sx, sy);
-      self.hoverNodeId = self.findNodeNear(w.x, w.y);
+      // Manual Gear Turning in Simulate Mode
+      if (self.isTurningGear && self.turningGearIdx !== -1) {
+        var g = self.gears[self.turningGearIdx];
+        var cNode = self.getNodeById(g.centerNode);
+        if (cNode) {
+          var currA = Math.atan2(w.y - cNode.y, w.x - cNode.x);
+          var delta = currA - self.prevGearMouseAngle;
+          self.prevGearMouseAngle = currA;
+          if (Math.abs(delta) < 1.0) {
+            // Send direct gear rotation to physics
+            if (self.onManualRotateGear) {
+              self.onManualRotateGear(self.turningGearIdx, delta);
+            }
+          }
+        }
+        return;
+      }
 
-      if (self.isDragging && self.selectedNodeId !== -1) {
+      self.hoverNodeId = self.findNodeNear(w.x, w.y);
+      self.hoverGearIdx = self.findGearNear(w.x, w.y);
+
+      // Dragging a node in Edit Mode
+      if (self.isDragging && self.selectedNodeId !== -1 && self.mode === 'edit') {
         var node = self.getNodeById(self.selectedNodeId);
         if (node) {
           node.x = Math.round(w.x);
           node.y = Math.round(w.y);
-          // Update connected rod lengths in editor
+
+          // Update lengths of connected rods
           for (var i = 0; i < self.rods.length; i++) {
             var r = self.rods[i];
             if (r.a === node.id || r.b === node.id) {
@@ -374,27 +596,60 @@
           self._notifyChange();
         }
       }
+
+      // Direct Physics Dragging in Simulate Mode
+      if (self.isDragging && self.selectedNodeId !== -1 && self.mode === 'simulate') {
+        if (self.onDirectDragNode) {
+          self.onDirectDragNode(self.selectedNodeId, w.x, w.y);
+        }
+      }
+
       self.render();
     });
 
-    window.addEventListener('mouseup', function() {
+    window.addEventListener('mouseup', function(e) {
+      if (self.isConnecting && self.connectStartNode !== -1) {
+        var w = self.screenToWorld(e.clientX, e.clientY);
+        var nearNode = self.findNodeNear(w.x, w.y);
+
+        if (nearNode !== -1 && nearNode !== self.connectStartNode) {
+          // Connect to existing node
+          self.addRod(self.connectStartNode, nearNode);
+        } else if (nearNode === -1) {
+          // Drop new node in empty space and connect
+          var endNode = self.addNode(w.x, w.y, false);
+          self.addRod(self.connectStartNode, endNode);
+        }
+      }
+
       self.isDragging = false;
+      self.isConnecting = false;
+      self.connectStartNode = -1;
       self.isPanning = false;
+      self.isTurningGear = false;
+      self.turningGearIdx = -1;
+
+      if (self.onDirectDragRelease) {
+        self.onDirectDragRelease();
+      }
+
       self.render();
     });
 
     canvas.addEventListener('wheel', function(e) {
       e.preventDefault();
-      var rect = canvas.getBoundingClientRect();
-      var sx = e.clientX - rect.left;
-      var sy = e.clientY - rect.top;
-      var wBefore = self.screenToWorld(sx, sy);
-
+      var wBefore = self.screenToWorld(e.clientX, e.clientY);
       var zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
       self.zoom = Math.max(0.2, Math.min(5.0, self.zoom * zoomFactor));
 
-      self.panX = sx - wBefore.x * self.zoom;
-      self.panY = sy - wBefore.y * self.zoom;
+      var rect = self.canvas.getBoundingClientRect();
+      var scaleX = self.canvas.width / rect.width;
+      var scaleY = self.canvas.height / rect.height;
+      var canvasPx = (e.clientX - rect.left) * scaleX;
+      var canvasPy = (e.clientY - rect.top) * scaleY;
+
+      self.panX = canvasPx - wBefore.x * self.zoom;
+      self.panY = canvasPy - wBefore.y * self.zoom;
       self.render();
     });
 
@@ -403,68 +658,109 @@
     });
   };
 
-  MechanismEditor.prototype.render = function() {
+  MechanismEditor.prototype.render = function(simPhysics) {
     var ctx = this.ctx;
     var canvas = this.canvas;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Background grid
     this._drawGrid(ctx);
 
     ctx.save();
     ctx.translate(this.panX, this.panY);
     ctx.scale(this.zoom, this.zoom);
 
-    // Draw Sliders
-    for (var sl = 0; sl < this.sliders.length; sl++) {
-      var s = this.sliders[sl];
-      var na = this.getNodeById(s.aNode);
-      var nb = this.getNodeById(s.bNode);
-      var ns = this.getNodeById(s.node);
-      if (na && nb && ns) {
-        this.renderer.drawSlider(ctx, na.x, na.y, nb.x, nb.y, ns.x, ns.y);
+    // In simulate mode, display live physics positions; in edit mode, display editor positions
+    var nodes = this.nodes;
+    var nodePositions = {};
+    if (simPhysics && this.mode === 'simulate') {
+      for (var i = 0; i < simPhysics.numNodes; i++) {
+        nodePositions[i] = { x: simPhysics.x[i], y: simPhysics.y[i] };
+      }
+      this.renderer.drawTracePaths(ctx);
+    } else {
+      for (var i = 0; i < this.nodes.length; i++) {
+        nodePositions[this.nodes[i].id] = { x: this.nodes[i].x, y: this.nodes[i].y };
       }
     }
 
-    // Draw Gears
-    for (var gi = 0; gi < this.gears.length; gi++) {
-      var gear = this.gears[gi];
-      var cNode = this.getNodeById(gear.centerNode);
-      if (cNode) {
-        this.renderer.drawGear(ctx, cNode.x, cNode.y, gear.radius, gear.teeth, 0);
+    // 1. Draw Rigid Brackets (Bell-cranks / Orthogonal Levers)
+    for (var b = 0; b < this.brackets.length; b++) {
+      var br = this.brackets[b];
+      var pa = nodePositions[br.a];
+      var pb = nodePositions[br.b];
+      var pc = nodePositions[br.c];
+      if (pa && pb && pc) {
+        this.renderer.drawRigidBracket(ctx, pa.x, pa.y, pb.x, pb.y, pc.x, pc.y, br.width, br.color);
       }
     }
 
-    // Draw Rods
-    for (var r = 0; r < this.rods.length; r++) {
-      var rod = this.rods[r];
-      var a = this.getNodeById(rod.a);
-      var b = this.getNodeById(rod.b);
-      if (a && b) {
-        this.renderer.drawCapsuleLink(ctx, a.x, a.y, b.x, b.y, rod.width, 0, rod.color);
+    // 2. Draw Sliders
+    var sliders = (simPhysics && this.mode === 'simulate') ? simPhysics.sliders : this.sliders;
+    for (var sl = 0; sl < sliders.length; sl++) {
+      var s = sliders[sl];
+      var pa = nodePositions[s.aNode];
+      var pb = nodePositions[s.bNode];
+      var ps = nodePositions[s.node];
+      if (pa && pb && ps) {
+        this.renderer.drawSlider(ctx, pa.x, pa.y, pb.x, pb.y, ps.x, ps.y);
       }
     }
 
-    // Draw Motors
-    for (var m = 0; m < this.motors.length; m++) {
-      var motor = this.motors[m];
-      var cNode = this.getNodeById(motor.centerNode);
-      var crNode = this.getNodeById(motor.crankNode);
-      if (cNode && crNode) {
-        var r = Math2D.dist(cNode.x, cNode.y, crNode.x, crNode.y);
-        this.renderer.drawMotorIndicator(ctx, cNode.x, cNode.y, r, motor.speed);
+    // 3. Draw Gears
+    var gears = (simPhysics && this.mode === 'simulate') ? simPhysics.gears : this.gears;
+    for (var gi = 0; gi < gears.length; gi++) {
+      var g = gears[gi];
+      var pc = nodePositions[g.centerNode];
+      if (pc) {
+        var angle = (simPhysics && this.mode === 'simulate') ? g.angle : 0;
+        this.renderer.drawGear(ctx, pc.x, pc.y, g.radius, g.teeth, angle);
+
+        // Highlight gear on hover
+        if (gi === this.hoverGearIdx && this.mode === 'edit') {
+          ctx.beginPath();
+          ctx.arc(pc.x, pc.y, g.radius + 6, 0, Math.PI * 2);
+          ctx.strokeStyle = '#38bdf8';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
       }
     }
 
-    // Draw Nodes and Pins
-    for (var i = 0; i < this.nodes.length; i++) {
-      var n = this.nodes[i];
-      if (n.fixed) {
-        this.renderer.drawGroundAnchor(ctx, n.x, n.y, 16);
+    // 4. Draw Rods
+    var rods = (simPhysics && this.mode === 'simulate') ? simPhysics.rods : this.rods;
+    for (var r = 0; r < rods.length; r++) {
+      var rod = rods[r];
+      var pa = nodePositions[rod.a];
+      var pb = nodePositions[rod.b];
+      if (pa && pb) {
+        var stress = (simPhysics && this.mode === 'simulate') ? rod.stress : 0;
+        this.renderer.drawCapsuleLink(ctx, pa.x, pa.y, pb.x, pb.y, rod.width, stress, rod.color);
+      }
+    }
+
+    // 5. Draw Motors
+    var motors = (simPhysics && this.mode === 'simulate') ? simPhysics.motors : this.motors;
+    for (var m = 0; m < motors.length; m++) {
+      var mot = motors[m];
+      var pc = nodePositions[mot.centerNode];
+      var pcr = nodePositions[mot.crankNode];
+      if (pc && pcr) {
+        var rDist = Math2D.dist(pc.x, pc.y, pcr.x, pcr.y);
+        this.renderer.drawMotorIndicator(ctx, pc.x, pc.y, rDist, mot.speed);
+      }
+    }
+
+    // 6. Draw Nodes and Pins
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      var pos = nodePositions[n.id] || { x: n.x, y: n.y };
+      var isFixed = (simPhysics && this.mode === 'simulate') ? simPhysics.isFixed[n.id] : n.fixed;
+
+      if (isFixed) {
+        this.renderer.drawGroundAnchor(ctx, pos.x, pos.y, 16);
       } else {
         ctx.beginPath();
-        ctx.arc(n.x, n.y, 7, 0, Math.PI * 2);
+        ctx.arc(pos.x, pos.y, 7, 0, Math.PI * 2);
         ctx.fillStyle = (n.id === this.selectedNodeId) ? '#f59e0b' : '#0f172a';
         ctx.fill();
         ctx.lineWidth = 2;
@@ -473,28 +769,33 @@
       }
 
       // Hover highlight
-      if (n.id === this.hoverNodeId) {
+      if (n.id === this.hoverNodeId && this.mode === 'edit') {
         ctx.beginPath();
-        ctx.arc(n.x, n.y, 11, 0, Math.PI * 2);
+        ctx.arc(pos.x, pos.y, 12, 0, Math.PI * 2);
         ctx.strokeStyle = '#38bdf8';
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 2.5;
         ctx.stroke();
       }
+    }
 
-      // Pending action line indicator
-      if (this.pendingAction) {
-        var pFrom = null;
-        if (this.pendingAction.fromNode !== undefined) pFrom = this.getNodeById(this.pendingAction.fromNode);
-        if (this.pendingAction.centerNode !== undefined) pFrom = this.getNodeById(this.pendingAction.centerNode);
-        if (this.pendingAction.aNode !== undefined) pFrom = this.getNodeById(this.pendingAction.aNode);
+    // 7. Ghost connection line when dragging to connect
+    if (this.isConnecting && this.connectStartNode !== -1) {
+      var pStart = nodePositions[this.connectStartNode];
+      if (pStart) {
+        ctx.beginPath();
+        ctx.moveTo(pStart.x, pStart.y);
+        ctx.lineTo(this.mouseWorldX, this.mouseWorldY);
+        ctx.strokeStyle = '#22c55e';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([5, 5]);
+        ctx.stroke();
+        ctx.setLineDash([]);
 
-        if (pFrom) {
-          ctx.beginPath();
-          ctx.arc(pFrom.x, pFrom.y, 13, 0, Math.PI * 2);
-          ctx.strokeStyle = '#22c55e';
-          ctx.lineWidth = 2.5;
-          ctx.stroke();
-        }
+        // Preview target circle
+        ctx.beginPath();
+        ctx.arc(this.mouseWorldX, this.mouseWorldY, 7, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(34, 197, 94, 0.4)';
+        ctx.fill();
       }
     }
 
@@ -523,7 +824,7 @@
     }
     ctx.stroke();
 
-    // Axis lines at world (0, 0)
+    // Axis lines at world origin
     ctx.beginPath();
     ctx.lineWidth = 1.5;
     ctx.strokeStyle = '#e2e8f0';
@@ -536,11 +837,8 @@
     ctx.restore();
   };
 
-  /**
-   * Presets library for quick mechanism testing and demonstration.
-   */
   MechanismEditor.Presets = {
-    // 1. Classic Klann 6-Bar Walking Mechanism
+    // 1. Klann Walking Mechanism
     klann: {
       version: '2.0',
       nodes: [
@@ -570,18 +868,19 @@
       gears: [],
       motors: [
         { centerNode: 0, crankNode: 1, speed: 3.0 }
-      ]
+      ],
+      brackets: []
     },
 
     // 2. Slider-Crank (Piston Engine)
     sliderCrank: {
       version: '2.0',
       nodes: [
-        { id: 0, x: -100, y: 0, fixed: true, mass: 1 },   // Crankshaft journal
-        { id: 1, x: -60, y: 0, fixed: false, mass: 1 },    // Crankpin
-        { id: 2, x: 70, y: 0, fixed: false, mass: 1 },     // Wrist pin (piston)
-        { id: 3, x: 0, y: 0, fixed: true, mass: 1 },      // Rail start
-        { id: 4, x: 180, y: 0, fixed: true, mass: 1 }      // Rail end
+        { id: 0, x: -100, y: 0, fixed: true, mass: 1 },
+        { id: 1, x: -60, y: 0, fixed: false, mass: 1 },
+        { id: 2, x: 70, y: 0, fixed: false, mass: 1 },
+        { id: 3, x: 0, y: 0, fixed: true, mass: 1 },
+        { id: 4, x: 180, y: 0, fixed: true, mass: 1 }
       ],
       rods: [
         { a: 0, b: 1, length: 40, width: 12, color: '#f59e0b' },
@@ -593,7 +892,8 @@
       gears: [],
       motors: [
         { centerNode: 0, crankNode: 1, speed: 3.5 }
-      ]
+      ],
+      brackets: []
     },
 
     // 3. Chebyshev Straight-Line Linkage
@@ -616,28 +916,62 @@
       gears: [],
       motors: [
         { centerNode: 0, crankNode: 2, speed: 2.0 }
+      ],
+      brackets: []
+    },
+
+    // 4. Geared Piston & Bell-Crank (Orthogonal Transfer & Geared Crank)
+    gearedBellCrank: {
+      version: '2.0',
+      nodes: [
+        { id: 0, x: -100, y: 0, fixed: true, mass: 1 },    // Gear 1 center
+        { id: 1, x: 0, y: 0, fixed: true, mass: 1 },       // Gear 2 center
+        { id: 2, x: 0, y: 35, fixed: false, mass: 1 },     // Pin attached on Gear 2
+        { id: 3, x: 90, y: 35, fixed: false, mass: 1 },    // Bell-crank input
+        { id: 4, x: 90, y: 80, fixed: true, mass: 1 },     // Bell-crank pivot
+        { id: 5, x: 135, y: 80, fixed: false, mass: 1 },   // Bell-crank 90-deg output
+        { id: 6, x: 135, y: 160, fixed: false, mass: 1 },  // Piston
+        { id: 7, x: 135, y: 120, fixed: true, mass: 1 },   // Slider rail start
+        { id: 8, x: 135, y: 220, fixed: true, mass: 1 }    // Slider rail end
+      ],
+      rods: [
+        { a: 2, b: 3, length: 90, width: 10, color: '#3b82f6' },
+        { a: 5, b: 6, length: 80, width: 10, color: '#10b981' }
+      ],
+      sliders: [
+        { node: 6, aNode: 7, bNode: 8, minT: 10, maxT: 90 }
+      ],
+      gears: [
+        { centerNode: 0, radius: 50, teeth: 20, meshWith: [1] },
+        { centerNode: 1, radius: 50, teeth: 20, meshWith: [0] }
+      ],
+      motors: [
+        { centerNode: 0, crankNode: 0, speed: 2.5 } // Drives gear 0
+      ],
+      brackets: [
+        { a: 3, b: 4, c: 5, width: 14, color: '#6366f1' }
       ]
     },
 
-    // 4. Compound Gear Train
+    // 5. Compound Gear Train
     gearTrain: {
       version: '2.0',
       nodes: [
         { id: 0, x: -70, y: 0, fixed: true, mass: 1 },
-        { id: 1, x: -70, y: 35, fixed: false, mass: 1 },
-        { id: 2, x: 0, y: 0, fixed: true, mass: 1 },
-        { id: 3, x: 90, y: 0, fixed: true, mass: 1 }
+        { id: 1, x: 0, y: 0, fixed: true, mass: 1 },
+        { id: 2, x: 90, y: 0, fixed: true, mass: 1 }
       ],
       rods: [],
       sliders: [],
       gears: [
         { centerNode: 0, radius: 35, teeth: 14, meshWith: [1] },
-        { centerNode: 2, radius: 35, teeth: 14, meshWith: [0, 2] },
-        { centerNode: 3, radius: 55, teeth: 22, meshWith: [1] }
+        { centerNode: 1, radius: 35, teeth: 14, meshWith: [0, 2] },
+        { centerNode: 2, radius: 55, teeth: 22, meshWith: [1] }
       ],
       motors: [
-        { centerNode: 0, crankNode: 1, speed: 2.0 }
-      ]
+        { centerNode: 0, crankNode: 0, speed: 2.0 }
+      ],
+      brackets: []
     }
   };
 

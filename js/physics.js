@@ -32,10 +32,17 @@
     this.fixedY = new Float64Array(MAX_NODES);
 
     // Constraints collections
-    this.rods = [];       // { a, b, length, width, color, stress }
-    this.sliders = [];    // { node, aNode, bNode, minT, maxT, railLength }
-    this.gears = [];      // { centerNode, radius, teeth, angle, meshWith: [...] }
-    this.motors = [];     // { centerNode, crankNode, speed, radius, angle, active }
+    this.rods = [];          // { a, b, length, width, color, stress }
+    this.sliders = [];       // { node, aNode, bNode, minT, maxT, railLength }
+    this.gears = [];         // { centerNode, radius, teeth, angle, meshWith: [...] }
+    this.motors = [];        // { centerNode, crankNode, speed, radius, angle, active }
+    this.brackets = [];      // { a, b, c, width, color }
+    this.attachedNodes = []; // { nodeId, gearIdx, radius, angleOffset }
+
+    // Direct user interaction
+    this.mouseDragNode = -1;
+    this.mouseDragX = 0;
+    this.mouseDragY = 0;
 
     // Simulation settings
     this.gravityX = 0;
@@ -65,6 +72,9 @@
     this.sliders = [];
     this.gears = [];
     this.motors = [];
+    this.brackets = [];
+    this.attachedNodes = [];
+    this.mouseDragNode = -1;
     this.time = 0;
   };
 
@@ -108,6 +118,39 @@
     };
     this.rods.push(rod);
     return rod;
+  };
+
+  PhysicsSystem.prototype.addRigidBracket = function(a, b, c, width, color) {
+    // Rigid triangle with B as pivot apex.
+    // Adds rods AB, BC, and internal locking cross-brace AC
+    var r1 = this.addRod(a, b, undefined, { width: width || 12, color: color || '#6366f1' });
+    var r2 = this.addRod(b, c, undefined, { width: width || 12, color: color || '#6366f1' });
+    var crossLen = Math2D.dist(this.x[a], this.y[a], this.x[c], this.y[c]);
+    var brace = this.addRod(a, c, crossLen, { width: 4, color: 'rgba(99, 102, 241, 0.2)' });
+    var bracket = { a: a, b: b, c: c, width: width || 12, color: color || '#6366f1', braceRod: brace };
+    this.brackets.push(bracket);
+    return bracket;
+  };
+
+  PhysicsSystem.prototype.attachNodeToGear = function(nodeId, gearIdx, radius, angleOffset) {
+    var gear = this.gears[gearIdx];
+    if (!gear) return;
+    var cx = this.x[gear.centerNode];
+    var cy = this.y[gear.centerNode];
+    if (radius === undefined) {
+      radius = Math2D.dist(cx, cy, this.x[nodeId], this.y[nodeId]);
+    }
+    if (angleOffset === undefined) {
+      angleOffset = Math.atan2(this.y[nodeId] - cy, this.x[nodeId] - cx) - gear.angle;
+    }
+    this.attachedNodes.push({
+      nodeId: nodeId,
+      gearIdx: gearIdx,
+      radius: radius,
+      angleOffset: angleOffset
+    });
+    // Constrain attached node kinematically
+    this.invMass[nodeId] = 0.0;
   };
 
   PhysicsSystem.prototype.addSlider = function(node, aNode, bNode, minT, maxT) {
@@ -162,6 +205,48 @@
     return motor;
   };
 
+  PhysicsSystem.prototype.setMouseDrag = function(nodeId, x, y) {
+    this.mouseDragNode = nodeId;
+    this.mouseDragX = x;
+    this.mouseDragY = y;
+  };
+
+  PhysicsSystem.prototype.clearMouseDrag = function() {
+    this.mouseDragNode = -1;
+  };
+
+  PhysicsSystem.prototype.rotateGearManual = function(gearIdx, deltaAngle) {
+    var gear = this.gears[gearIdx];
+    if (!gear) return;
+    gear.angle += deltaAngle;
+    this.propagateGearAngles(gearIdx);
+  };
+
+  PhysicsSystem.prototype.propagateGearAngles = function(sourceGearIdx) {
+    var visited = new Set();
+    var queue = [sourceGearIdx];
+    visited.add(sourceGearIdx);
+
+    while (queue.length > 0) {
+      var currIdx = queue.shift();
+      var g1 = this.gears[currIdx];
+      var c1x = this.x[g1.centerNode];
+      var c1y = this.y[g1.centerNode];
+
+      for (var mi = 0; mi < g1.meshWith.length; mi++) {
+        var nextIdx = g1.meshWith[mi];
+        if (!visited.has(nextIdx)) {
+          visited.add(nextIdx);
+          var g2 = this.gears[nextIdx];
+          var c2x = this.x[g2.centerNode];
+          var c2y = this.y[g2.centerNode];
+          g2.angle = Math2D.calcMeshedAngle(c1x, c1y, g1.teeth, g1.angle, c2x, c2y, g2.teeth);
+          queue.push(nextIdx);
+        }
+      }
+    }
+  };
+
   /**
    * Run one simulation step with dt (default 1/60s).
    * Sub-stepped XPBD handles rigidity and high angular velocities gracefully.
@@ -196,22 +281,21 @@
           var gear = this.gears[gi];
           if (gear.centerNode === motor.centerNode) {
             gear.angle += motor.speed * h;
+            this.propagateGearAngles(gi);
           }
         }
       }
 
-      // Propagate gear meshing rotations
-      for (var gi = 0; gi < this.gears.length; gi++) {
-        var g1 = this.gears[gi];
-        for (var mi = 0; mi < g1.meshWith.length; mi++) {
-          var otherIdx = g1.meshWith[mi];
-          if (otherIdx > gi) {
-            var g2 = this.gears[otherIdx];
-            var ratio = -g1.radius / g2.radius;
-            // Align relative angle
-            var expectedDelta = g1.angle * ratio;
-            g2.angle = expectedDelta;
-          }
+      // Update attached nodes on gears before integration
+      for (var ai = 0; ai < this.attachedNodes.length; ai++) {
+        var att = this.attachedNodes[ai];
+        var ag = this.gears[att.gearIdx];
+        if (ag) {
+          var acx = this.x[ag.centerNode];
+          var acy = this.y[ag.centerNode];
+          var totA = ag.angle + att.angleOffset;
+          this.x[att.nodeId] = acx + att.radius * Math.cos(totA);
+          this.y[att.nodeId] = acy + att.radius * Math.sin(totA);
         }
       }
 
@@ -236,6 +320,12 @@
 
         this.x[i] += this.vx[i] * h;
         this.y[i] += this.vy[i] * h;
+      }
+
+      // Apply mouse dragging target
+      if (this.mouseDragNode !== -1 && !this.isFixed[this.mouseDragNode]) {
+        this.x[this.mouseDragNode] = this.mouseDragX;
+        this.y[this.mouseDragNode] = this.mouseDragY;
       }
 
       // 3. Project constraints
@@ -303,7 +393,7 @@
         this.y[sNode] = ay + proj * uy;
       }
 
-      // Re-assert fixed pins and motor crank positions
+      // Re-assert fixed pins, motor crank positions, and gear attached nodes
       for (var i = 0; i < this.numNodes; i++) {
         if (this.isFixed[i]) {
           this.x[i] = this.fixedX[i];
@@ -317,6 +407,21 @@
         var cy = this.y[motor.centerNode];
         this.x[motor.crankNode] = cx + motor.radius * Math.cos(motor.angle);
         this.y[motor.crankNode] = cy + motor.radius * Math.sin(motor.angle);
+      }
+      for (var ai = 0; ai < this.attachedNodes.length; ai++) {
+        var att = this.attachedNodes[ai];
+        var ag = this.gears[att.gearIdx];
+        if (ag) {
+          var acx = this.x[ag.centerNode];
+          var acy = this.y[ag.centerNode];
+          var totA = ag.angle + att.angleOffset;
+          this.x[att.nodeId] = acx + att.radius * Math.cos(totA);
+          this.y[att.nodeId] = acy + att.radius * Math.sin(totA);
+        }
+      }
+      if (this.mouseDragNode !== -1 && !this.isFixed[this.mouseDragNode]) {
+        this.x[this.mouseDragNode] = this.mouseDragX;
+        this.y[this.mouseDragNode] = this.mouseDragY;
       }
 
       // 4. Velocity update

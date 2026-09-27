@@ -63,7 +63,7 @@ console.log('Running Linksim Physics & Timeline Test Suite...');
   console.log('PASS: Motor kinematics');
 }
 
-// Test 5: Gear ratio constraint
+// Test 5: Gear ratio constraint (delta angle ratio)
 {
   const sim = new PhysicsSystem();
   const c1 = sim.addNode(0, 0, true);
@@ -72,15 +72,20 @@ console.log('Running Linksim Physics & Timeline Test Suite...');
   const g2 = sim.addGear(c2, 40, 20); // 2:1 ratio
   sim.connectGears(0, 1);
 
+  // Set initial meshed orientation
+  sim.propagateGearAngles(0);
+  const initialG2 = g2.angle;
+
   // Drive gear 1 with a motor
   const crank = sim.addNode(20, 0, false);
   sim.addMotor(c1, crank, Math.PI);
 
-  sim.step(0.5); // Gear 1 turns by pi/2 (90 deg)
-  // Gear 2 should rotate by - (20/40) * (pi/2) = -pi/4 (-45 deg)
-  const expectedG2Angle = -(20 / 40) * g1.angle;
-  assert(Math.abs(g2.angle - expectedG2Angle) < 1e-4, `Gear 2 angle expected ${expectedG2Angle}, got ${g2.angle}`);
-  console.log('PASS: Gear ratio constraint');
+  sim.step(0.5); // Gear 1 turns by pi/2
+  const deltaG1 = g1.angle;
+  const deltaG2 = Math2D.normalizeAngle(g2.angle - initialG2);
+  const expectedRatio = -10 / 20; // -0.5
+  assert(Math.abs(deltaG2 / deltaG1 - expectedRatio) < 1e-4, `Gear ratio expected ${expectedRatio}, got ${deltaG2 / deltaG1}`);
+  console.log('PASS: Gear ratio constraint (differential meshing ratio)');
 }
 
 // Test 6: Timeline scrub & restore determinism
@@ -108,6 +113,47 @@ console.log('Running Linksim Physics & Timeline Test Suite...');
   assert(Math.abs(sim.x[p] - posAt30.x) < 1e-6, 'State restoration at frame 30 failed');
   assert(Math.abs(sim.y[p] - posAt30.y) < 1e-6, 'State restoration at frame 30 failed');
   console.log('PASS: Timeline scrubbing determinism');
+}
+
+// Test 7: Node attached on gear body
+{
+  const sim = new PhysicsSystem();
+  const c = sim.addNode(100, 100, true);
+  const g = sim.addGear(c, 50, 16);
+  const pin = sim.addNode(150, 100, false);
+  sim.attachNodeToGear(pin, 0, 50, 0);
+
+  // Manually rotate gear by 90 degrees (pi/2)
+  sim.rotateGearManual(0, Math.PI / 2);
+  sim.step(1 / 60);
+
+  // Pin should rotate around (100, 100) to (100, 150)
+  assert(Math.abs(sim.x[pin] - 100) < 0.1, `Attached pin X expected 100, got ${sim.x[pin]}`);
+  assert(Math.abs(sim.y[pin] - 150) < 0.1, `Attached pin Y expected 150, got ${sim.y[pin]}`);
+  console.log('PASS: Node attached to gear constraint');
+}
+
+// Test 8: Rigid bracket / bell-crank orthogonal transfer
+{
+  const sim = new PhysicsSystem();
+  // Pivot at (0, 0), arm A at (50, 0), arm C at (0, 50) -> 90 degree angle
+  const a = sim.addNode(50, 0, false);
+  const b = sim.addNode(0, 0, true);
+  const c = sim.addNode(0, 50, false);
+  sim.addRigidBracket(a, b, c);
+
+  // Force arm A to rotate by 45 degrees
+  sim.x[a] = 50 * Math.cos(Math.PI / 4);
+  sim.y[a] = 50 * Math.sin(Math.PI / 4);
+  sim.step(1 / 60);
+
+  // Check dot product between BA and BC to verify 90 degree angle is locked
+  const dBA = Math2D.dist(sim.x[a], sim.y[a], sim.x[b], sim.y[b]);
+  const dBC = Math2D.dist(sim.x[c], sim.y[c], sim.x[b], sim.y[b]);
+  const dot = Math2D.dot(sim.x[a] - sim.x[b], sim.y[a] - sim.y[b], sim.x[c] - sim.x[b], sim.y[c] - sim.y[b]);
+  const cosAngle = dot / (dBA * dBC);
+  assert(Math.abs(cosAngle) < 0.05, `Bell-crank angle expected 90 deg (cos 0), got cos ${cosAngle}`);
+  console.log('PASS: Rigid bracket orthogonal angle lock');
 }
 
 console.log('All tests passed successfully!');

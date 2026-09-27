@@ -213,41 +213,101 @@
   };
 
   /**
-   * Render toothed mechanical gear with teeth, body disk, and spokes.
+   * Render rigid L-bracket or triangular bell-crank connecting A, B (apex), and C.
+   */
+  SpriteRenderer.prototype.drawRigidBracket = function(ctx, ax, ay, bx, by, cx, cy, width, color) {
+    width = width || 14;
+    var rad = width * 0.8;
+    ctx.save();
+
+    // Solid plate connecting all three nodes
+    ctx.beginPath();
+    ctx.arc(bx, by, rad * 1.3, 0, Math.PI * 2);
+    ctx.fillStyle = color || '#6366f1';
+    ctx.fill();
+
+    // Arm 1 (B to A)
+    this.drawCapsuleLink(ctx, bx, by, ax, ay, width, 0, color || '#6366f1');
+    // Arm 2 (B to C)
+    this.drawCapsuleLink(ctx, bx, by, cx, cy, width, 0, color || '#6366f1');
+
+    // Triangular gusset/web between A, B, C
+    ctx.beginPath();
+    ctx.moveTo(bx, by);
+    ctx.lineTo(bx + (ax - bx) * 0.6, by + (ay - by) * 0.6);
+    ctx.lineTo(bx + (cx - bx) * 0.6, by + (cy - by) * 0.6);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(99, 102, 241, 0.4)';
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#4338ca';
+    ctx.stroke();
+
+    // Central apex bushing
+    ctx.beginPath();
+    ctx.arc(bx, by, rad * 0.6, 0, Math.PI * 2);
+    ctx.fillStyle = '#f8fafc';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#0f172a';
+    ctx.stroke();
+
+    ctx.restore();
+  };
+
+  /**
+   * Render toothed mechanical gear with proper addendum/dedendum meshing profile.
    */
   SpriteRenderer.prototype.drawGear = function(ctx, cx, cy, radius, teeth, angle) {
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(angle);
 
-    var pitchR = radius;
-    var rootR = radius * 0.85;
-    var tipR = radius * 1.15;
     var numTeeth = Math.max(6, teeth);
+    var pitchR = radius;
+    var module = (2 * pitchR) / numTeeth; // gear module m
+    var addendum = module;
+    var dedendum = 1.25 * module;
+    var tipR = pitchR + addendum;
+    var rootR = Math.max(pitchR * 0.5, pitchR - dedendum);
     var toothAngle = (Math.PI * 2) / numTeeth;
 
-    // Draw gear outline with involute/trapezoidal teeth
+    // Draw authentic gear tooth profile
     ctx.beginPath();
     for (var i = 0; i < numTeeth; i++) {
-      var a0 = i * toothAngle;
-      var a1 = a0 + toothAngle * 0.25;
-      var a2 = a0 + toothAngle * 0.5;
-      var a3 = a0 + toothAngle * 0.75;
-      var a4 = a0 + toothAngle;
+      var baseA = i * toothAngle;
 
-      var x0 = rootR * Math.cos(a0), y0 = rootR * Math.sin(a0);
-      var x1 = tipR  * Math.cos(a1), y1 = tipR  * Math.sin(a1);
-      var x2 = tipR  * Math.cos(a2), y2 = tipR  * Math.sin(a2);
-      var x3 = rootR * Math.cos(a3), y3 = rootR * Math.sin(a3);
-      var x4 = rootR * Math.cos(a4), y4 = rootR * Math.sin(a4);
+      // Involute-approximated points:
+      // a0: root start
+      // a1: pitch flank start
+      // a2: tip corner 1
+      // a3: tip corner 2
+      // a4: pitch flank end
+      // a5: root end
+      var a0 = baseA - toothAngle * 0.32;
+      var a1 = baseA - toothAngle * 0.24;
+      var a2 = baseA - toothAngle * 0.12;
+      var a3 = baseA + toothAngle * 0.12;
+      var a4 = baseA + toothAngle * 0.24;
+      var a5 = baseA + toothAngle * 0.32;
 
-      if (i === 0) ctx.moveTo(x0, y0);
-      else ctx.lineTo(x0, y0);
+      var x0 = rootR  * Math.cos(a0), y0 = rootR  * Math.sin(a0);
+      var x1 = pitchR * Math.cos(a1), y1 = pitchR * Math.sin(a1);
+      var x2 = tipR   * Math.cos(a2), y2 = tipR   * Math.sin(a2);
+      var x3 = tipR   * Math.cos(a3), y3 = tipR   * Math.sin(a3);
+      var x4 = pitchR * Math.cos(a4), y4 = pitchR * Math.sin(a4);
+      var x5 = rootR  * Math.cos(a5), y5 = rootR  * Math.sin(a5);
 
+      if (i === 0) {
+        ctx.moveTo(x0, y0);
+      } else {
+        ctx.lineTo(x0, y0);
+      }
       ctx.lineTo(x1, y1);
       ctx.lineTo(x2, y2);
       ctx.lineTo(x3, y3);
       ctx.lineTo(x4, y4);
+      ctx.lineTo(x5, y5);
     }
     ctx.closePath();
 

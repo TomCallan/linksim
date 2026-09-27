@@ -7,112 +7,92 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='40' fill='%232563eb'/><circle cx='50' cy='50' r='18' fill='%23ffffff'/></svg>">
   <style>
     * { box-sizing: border-box; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    html, body {
+      height: 100vh;
+      overflow: hidden;
       margin: 0;
-      padding: 16px 24px;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       background-color: #f8fafc;
       color: #0f172a;
+      display: flex;
+      flex-direction: column;
     }
     header {
+      height: 52px;
+      min-height: 52px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 14px;
+      padding: 0 16px;
+      background: #ffffff;
       border-bottom: 1px solid #e2e8f0;
-      padding-bottom: 10px;
+      z-index: 10;
+      gap: 12px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
     h1 {
       margin: 0;
-      font-size: 1.35rem;
+      font-size: 1.25rem;
       font-weight: 700;
       letter-spacing: -0.02em;
     }
     .badge {
       background-color: #e0f2fe;
       color: #0369a1;
-      font-size: 0.75rem;
+      font-size: 0.72rem;
       font-weight: 600;
-      padding: 3px 8px;
+      padding: 2px 7px;
       border-radius: 9999px;
-      margin-left: 8px;
     }
-    .header-actions {
+    .mode-toggle {
       display: flex;
-      align-items: center;
-      gap: 12px;
-      font-size: 0.85rem;
+      background: #e2e8f0;
+      border-radius: 6px;
+      padding: 2px;
+      gap: 2px;
     }
-    .fps-badge {
-      background-color: #f1f5f9;
-      color: #334155;
-      font-family: monospace;
-      font-weight: 700;
-      padding: 4px 8px;
-      border-radius: 4px;
-      border: 1px solid #cbd5e1;
-    }
-    .main-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 16px;
-      width: 100%;
-      max-width: 1600px;
-      margin: 0 auto;
-    }
-    @media (max-width: 860px) {
-      .main-grid {
-        grid-template-columns: 1fr;
-      }
-    }
-    .panel {
-      background: #ffffff;
-      border: 1px solid #cbd5e1;
-      border-radius: 8px;
-      padding: 12px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-      display: flex;
-      flex-direction: column;
-      min-width: 0;
-    }
-    .canvas-wrap {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      width: 100%;
-    }
-    .panel-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 10px;
-      min-height: 34px;
-    }
-    .panel-title {
+    .mode-btn {
+      border: none;
+      background: transparent;
+      font-size: 0.8rem;
       font-weight: 600;
-      font-size: 0.95rem;
+      padding: 5px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      color: #475569;
+      transition: all 0.15s ease;
+    }
+    .mode-btn.active {
+      background: #ffffff;
+      color: #0f172a;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.08);
     }
     .toolbar {
       display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
       align-items: center;
+      gap: 5px;
     }
     button, select {
       font-family: inherit;
-      font-size: 0.82rem;
+      font-size: 0.8rem;
       font-weight: 500;
       padding: 5px 10px;
-      border-radius: 4px;
-      border: 1px solid #94a3b8;
+      border-radius: 5px;
+      border: 1px solid #cbd5e1;
       background: #ffffff;
       color: #1e293b;
       cursor: pointer;
-      transition: all 0.15s ease;
+      transition: all 0.12s ease;
+      white-space: nowrap;
     }
     button:hover, select:hover {
       background: #f1f5f9;
-      border-color: #64748b;
+      border-color: #94a3b8;
     }
     button:active {
       transform: translateY(1px);
@@ -130,34 +110,64 @@
       background: #fef2f2;
       border-color: #ef4444;
     }
+    .fps-badge {
+      background-color: #f1f5f9;
+      color: #334155;
+      font-family: monospace;
+      font-weight: 700;
+      font-size: 0.8rem;
+      padding: 4px 8px;
+      border-radius: 4px;
+      border: 1px solid #cbd5e1;
+    }
+    .workspace {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+      width: 100%;
+      background: #ffffff;
+    }
     canvas {
       display: block;
-      background: #ffffff;
-      border: 1px solid #e2e8f0;
-      border-radius: 4px;
+      width: 100%;
+      height: 100%;
       cursor: crosshair;
     }
-    .playback-bar {
-      margin-top: 10px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      background: #f8fafc;
-      padding: 10px;
+    .overlay-hints {
+      position: absolute;
+      bottom: 12px;
+      left: 14px;
+      background: rgba(255, 255, 255, 0.88);
+      backdrop-filter: blur(4px);
+      padding: 6px 12px;
       border-radius: 6px;
-      border: 1px solid #e2e8f0;
+      border: 1px solid rgba(226, 232, 240, 0.9);
+      font-size: 0.75rem;
+      color: #475569;
+      pointer-events: none;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .playback-bar {
+      height: 56px;
+      min-height: 56px;
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      background: #ffffff;
+      border-top: 1px solid #e2e8f0;
+      gap: 12px;
+      z-index: 10;
     }
     .playback-controls {
       display: flex;
       align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
+      gap: 6px;
     }
-    .scrubber-container {
+    .scrubber-wrap {
+      flex: 1;
       display: flex;
       align-items: center;
       gap: 10px;
-      width: 100%;
     }
     .slider {
       flex: 1;
@@ -169,16 +179,17 @@
       font-family: monospace;
       font-size: 0.75rem;
       color: #64748b;
-      min-width: 110px;
+      min-width: 105px;
       text-align: right;
     }
     .options-bar {
       display: flex;
       align-items: center;
-      gap: 14px;
-      font-size: 0.8rem;
+      gap: 12px;
+      font-size: 0.78rem;
       color: #475569;
-      margin-top: 4px;
+      border-left: 1px solid #e2e8f0;
+      padding-left: 12px;
     }
     .options-bar label {
       display: flex;
@@ -186,95 +197,113 @@
       gap: 4px;
       cursor: pointer;
     }
-    footer {
-      margin-top: 20px;
-      font-size: 0.78rem;
-      color: #64748b;
-      text-align: center;
+    /* Context Menu */
+    #contextMenu {
+      display: none;
+      position: fixed;
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+      padding: 4px 0;
+      z-index: 1000;
+      min-width: 180px;
+    }
+    .context-item {
+      padding: 6px 14px;
+      font-size: 0.8rem;
+      color: #1e293b;
+      cursor: pointer;
+      transition: background 0.1s ease;
+    }
+    .context-item:hover {
+      background: #f1f5f9;
+      color: #2563eb;
+    }
+    .context-item.danger {
+      color: #dc2626;
+    }
+    .context-item.danger:hover {
+      background: #fef2f2;
     }
   </style>
 </head>
 <body>
 
 <header>
-  <div style="display:flex; align-items:center;">
+  <div class="brand">
     <h1>Linksim</h1>
     <span class="badge">XPBD 2.0</span>
   </div>
-  <div class="header-actions">
-    <label for="presetSelect">Preset:</label>
+
+  <div class="mode-toggle">
+    <button id="btnModeSim" class="mode-btn active" title="Run physics simulation">Simulate</button>
+    <button id="btnModeEdit" class="mode-btn" title="Edit blueprint and linkages">Edit</button>
+  </div>
+
+  <div id="editTools" class="toolbar" style="display:none;">
+    <button data-tool="select" class="active" title="Select & Move (V)">Select</button>
+    <button data-tool="add_pin" title="Add ground pivot pin (P)">Pin</button>
+    <button data-tool="add_node" title="Add free joint node (J)">Joint</button>
+    <button data-tool="add_rod" title="Drag between nodes to create rigid rod (R)">Rod</button>
+    <button data-tool="add_slider" title="Place linear rail & piston (S)">Slider</button>
+    <button data-tool="add_gear" title="Add toothed gear wheel (G)">Gear</button>
+    <button data-tool="add_motor" title="Attach rotational motor (M)">Motor</button>
+    <button data-tool="delete" class="btn-danger" title="Delete element (X)">Delete</button>
+  </div>
+
+  <div style="display:flex; align-items:center; gap:8px; margin-left:auto;">
+    <button id="btnUndo" title="Undo change (Ctrl+Z)">Undo</button>
+    <button id="btnClear" class="btn-danger" title="Clear all">Clear</button>
+
+    <label for="presetSelect" style="font-size:0.8rem; font-weight:500;">Preset:</label>
     <select id="presetSelect">
       <option value="klann">Klann Walker Linkage</option>
       <option value="sliderCrank">Slider-Crank (Piston Engine)</option>
       <option value="chebyshev">Chebyshev Straight-Line</option>
+      <option value="gearedBellCrank">Geared Piston & Bell-Crank</option>
       <option value="gearTrain">Compound Gear Train</option>
     </select>
     <div id="fpsMeter" class="fps-badge">60 FPS</div>
   </div>
 </header>
 
-<main class="main-grid">
-  <!-- Left Panel: Blueprint Editor -->
-  <div class="panel">
-    <div class="panel-header">
-      <span class="panel-title">Blueprint Editor</span>
-      <div class="toolbar">
-        <button data-tool="select" class="active" title="Select & Move (drag elements)">Select</button>
-        <button data-tool="add_pin" title="Add fixed ground anchor">Add Pin</button>
-        <button data-tool="add_node" title="Add free joint">Add Node</button>
-        <button data-tool="add_rod" title="Connect 2 nodes with rigid rod">Add Rod</button>
-        <button data-tool="add_slider" title="Place linear rail & sliding piston">Add Slider</button>
-        <button data-tool="add_gear" title="Add toothed gear to pivot">Add Gear</button>
-        <button data-tool="add_motor" title="Connect pin to crank with motor">Add Motor</button>
-        <button data-tool="delete" class="btn-danger" title="Delete clicked item">Delete</button>
-        <button id="btnClear" class="btn-danger" title="Clear all">Clear</button>
-      </div>
-    </div>
-    <canvas id="incanvas" width="560" height="560"></canvas>
-    <div style="margin-top:8px; font-size:0.75rem; color:#64748b;">
-      Tip: Left-drag to reposition nodes. Right-drag or middle-drag to pan. Mouse wheel to zoom.
-    </div>
-  </div>
-
-  <!-- Right Panel: Live Simulation & Playback -->
-  <div class="panel">
-    <div class="panel-header">
-      <span class="panel-title">Live Simulation & Playback</span>
-      <div class="options-bar">
-        <label><input type="checkbox" id="toggleStress" checked> Stress Heatmap</label>
-        <label><input type="checkbox" id="toggleTraces" checked> Motion Traces</label>
-      </div>
-    </div>
-    <canvas id="outcanvas" width="560" height="560"></canvas>
-
-    <div class="playback-bar">
-      <div class="playback-controls">
-        <button id="btnPlay">Pause</button>
-        <button id="btnStepBack" title="Step backward one frame">Step Back</button>
-        <button id="btnStepForward" title="Step forward one frame">Step Forward</button>
-        <button id="btnReset" title="Reset simulation to initial frame">Reset</button>
-
-        <label style="margin-left:auto; font-size:0.8rem; color:#475569;" for="speedSelect">Speed:</label>
-        <select id="speedSelect">
-          <option value="0.25">0.25x</option>
-          <option value="0.5">0.5x</option>
-          <option value="1.0" selected>1.0x</option>
-          <option value="2.0">2.0x</option>
-          <option value="4.0">4.0x</option>
-        </select>
-      </div>
-
-      <div class="scrubber-container">
-        <input type="range" id="timeSlider" class="slider" min="0" max="0" value="0">
-        <span id="frameInfo" class="frame-info">Frame: 1 / 1</span>
-      </div>
-    </div>
+<main class="workspace">
+  <canvas id="maincanvas"></canvas>
+  <div class="overlay-hints">
+    Left-drag: Move or Drag-to-connect Rods &bull; Right-click: Context Menu &bull; Space: Play/Pause &bull; Wheel: Zoom &bull; Middle-drag: Pan
   </div>
 </main>
 
-<footer>
-  Linksim 2.0 &bull; High-Performance Mechanical Linkage & Physics Simulator &bull; Sub-stepped Extended Position-Based Dynamics (XPBD)
-</footer>
+<div class="playback-bar">
+  <div class="playback-controls">
+    <button id="btnPlay" style="min-width:65px; font-weight:600;">Pause</button>
+    <button id="btnStepBack" title="Step backward ([)">Step Back</button>
+    <button id="btnStepForward" title="Step forward (])">Step Forward</button>
+    <button id="btnReset" title="Reset to initial frame">Reset</button>
+
+    <label style="margin-left:8px; font-size:0.8rem; color:#475569;" for="speedSelect">Speed:</label>
+    <select id="speedSelect">
+      <option value="0.25">0.25x</option>
+      <option value="0.5">0.5x</option>
+      <option value="1.0" selected>1.0x</option>
+      <option value="2.0">2.0x</option>
+      <option value="4.0">4.0x</option>
+    </select>
+  </div>
+
+  <div class="scrubber-wrap">
+    <input type="range" id="timeSlider" class="slider" min="0" max="0" value="0">
+    <span id="frameInfo" class="frame-info">Frame: 1 / 1</span>
+  </div>
+
+  <div class="options-bar">
+    <label><input type="checkbox" id="toggleStress" checked> Stress</label>
+    <label><input type="checkbox" id="toggleTraces" checked> Traces</label>
+  </div>
+</div>
+
+<div id="contextMenu"></div>
 
 <script src="./js/math2d.js"></script>
 <script src="./js/physics.js"></script>

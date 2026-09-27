@@ -1,25 +1,16 @@
 /**
  * Main Application Orchestrator for Linksim Modernization.
- * Coordinates Editor, Physics Solver, Timeline Playback, and requestAnimationFrame Loop.
+ * Coordinates Single-Window Unified Canvas, Mode Switching, Context Menus, and Playback.
  */
 (function() {
   'use strict';
 
-  var incanvas, outcanvas;
-  var inctx, outctx;
+  var canvas;
+  var ctx;
   var editor;
   var physics;
   var timeline;
   var renderer;
-
-  // Sim canvas view state
-  var simPanX = 300;
-  var simPanY = 300;
-  var simZoom = 1.0;
-  var simDraggingNode = -1;
-  var simIsPanning = false;
-  var simDragStartX = 0;
-  var simDragStartY = 0;
 
   // FPS tracking
   var lastFrameTime = performance.now();
@@ -27,81 +18,133 @@
   var fpsDisplayTimer = 0;
   var currentFPS = 60;
 
+  // Context menu element
+  var contextMenuEl;
+
   function init() {
-    incanvas = document.getElementById('incanvas');
-    outcanvas = document.getElementById('outcanvas');
-    inctx = incanvas.getContext('2d');
-    outctx = outcanvas.getContext('2d');
+    canvas = document.getElementById('maincanvas');
+    ctx = canvas.getContext('2d');
+    contextMenuEl = document.getElementById('contextMenu');
 
     physics = new PhysicsSystem();
     timeline = new Timeline(physics);
     renderer = new SpriteRenderer();
 
-    editor = new MechanismEditor(incanvas, function(modelJSON) {
+    editor = new MechanismEditor(canvas, function(modelJSON) {
       loadModelIntoPhysics(modelJSON);
     });
 
-    // Resize handling
+    // Wire Direct Physics Interactions
+    editor.onDirectDragNode = function(nodeId, x, y) {
+      physics.setMouseDrag(nodeId, x, y);
+    };
+    editor.onDirectDragRelease = function() {
+      physics.clearMouseDrag();
+    };
+    editor.onManualRotateGear = function(gearIdx, deltaAngle) {
+      physics.rotateGearManual(gearIdx, deltaAngle);
+    };
+
+    // Wire Context Menu
+    editor.onShowContextMenu = function(clientX, clientY, targetType, targetData) {
+      showContextMenu(clientX, clientY, targetType, targetData);
+    };
+
+    // Hide context menu on click elsewhere
+    window.addEventListener('click', function() {
+      hideContextMenu();
+    });
+
+    // Window Resize handling (fit full viewport)
     window.addEventListener('resize', handleResize);
     handleResize();
 
-    // Bind Sim Canvas Interactions
-    bindSimCanvasEvents();
-
-    // Bind UI controls
-    bindToolbarControls();
+    // Bind UI & Playback Controls
+    bindHeaderControls();
     bindPlaybackControls();
+    bindKeyboardShortcuts();
 
     // Load initial preset (Klann Walker)
     loadPreset('klann');
+
+    // Default to Simulate mode running
+    setMode('simulate');
 
     // Start requestAnimationFrame loop
     requestAnimationFrame(loop);
   }
 
   function handleResize() {
-    var panel = incanvas.parentElement;
-    var panelWidth = panel ? (panel.clientWidth - 26) : 500;
-    var maxH = window.innerHeight - 260;
-    var size = Math.max(280, Math.min(panelWidth, maxH, 700));
+    var header = document.querySelector('header');
+    var playbackBar = document.querySelector('.playback-bar');
+    var headerH = header ? header.offsetHeight : 52;
+    var barH = playbackBar ? playbackBar.offsetHeight : 56;
 
-    incanvas.width = size;
-    incanvas.height = size;
-    outcanvas.width = size;
-    outcanvas.height = size;
+    var availW = window.innerWidth;
+    var availH = Math.max(300, window.innerHeight - headerH - barH);
+
+    canvas.width = availW;
+    canvas.height = availH;
 
     if (editor) {
-      editor.panX = size / 2;
-      editor.panY = size / 2;
-      editor.render();
+      editor.panX = availW / 2;
+      editor.panY = availH / 2;
+      editor.render(physics);
     }
-    simPanX = size / 2;
-    simPanY = size / 2;
+  }
+
+  function setMode(mode) {
+    editor.mode = mode;
+    var btnEdit = document.getElementById('btnModeEdit');
+    var btnSim = document.getElementById('btnModeSim');
+    var toolsPanel = document.getElementById('editTools');
+
+    if (mode === 'edit') {
+      if (btnEdit) btnEdit.classList.add('active');
+      if (btnSim) btnSim.classList.remove('active');
+      if (toolsPanel) toolsPanel.style.display = 'flex';
+      timeline.pause();
+    } else {
+      if (btnSim) btnSim.classList.add('active');
+      if (btnEdit) btnEdit.classList.remove('active');
+      if (toolsPanel) toolsPanel.style.display = 'none';
+      timeline.play();
+    }
+    hideContextMenu();
+    editor.render(physics);
   }
 
   function loadModelIntoPhysics(model) {
     physics.clear();
     renderer.clearTraces();
 
-    // Add nodes
+    // 1. Add nodes
     for (var i = 0; i < model.nodes.length; i++) {
       var n = model.nodes[i];
       physics.addNode(n.x, n.y, n.fixed, n.mass);
     }
 
-    // Add rods
+    // 2. Add rods
     for (var r = 0; r < model.rods.length; r++) {
       var rod = model.rods[r];
       physics.addRod(rod.a, rod.b, rod.length, { width: rod.width, color: rod.color });
     }
 
-    // Add sliders
+    // 3. Add brackets (bell cranks)
+    if (model.brackets) {
+      for (var b = 0; b < model.brackets.length; b++) {
+        var br = model.brackets[b];
+        physics.addRigidBracket(br.a, br.b, br.c, br.width, br.color);
+      }
+    }
+
+    // 4. Add sliders
     for (var s = 0; s < model.sliders.length; s++) {
       var sl = model.sliders[s];
       physics.addSlider(sl.node, sl.aNode, sl.bNode, sl.minT, sl.maxT);
     }
 
-    // Add gears
+    // 5. Add gears
     for (var g = 0; g < model.gears.length; g++) {
       var gear = model.gears[g];
       var gObj = physics.addGear(gear.centerNode, gear.radius, gear.teeth);
@@ -110,7 +153,15 @@
       }
     }
 
-    // Add motors
+    // 6. Connect parented nodes to gears
+    for (var i = 0; i < model.nodes.length; i++) {
+      var n = model.nodes[i];
+      if (n.parentGear) {
+        physics.attachNodeToGear(n.id, n.parentGear.gearIdx, n.parentGear.radius, n.parentGear.angleOffset);
+      }
+    }
+
+    // 7. Add motors
     for (var m = 0; m < model.motors.length; m++) {
       var mot = model.motors[m];
       physics.addMotor(mot.centerNode, mot.crankNode, mot.speed);
@@ -127,7 +178,14 @@
     }
   }
 
-  function bindToolbarControls() {
+  function bindHeaderControls() {
+    document.getElementById('btnModeEdit').addEventListener('click', function() {
+      setMode('edit');
+    });
+    document.getElementById('btnModeSim').addEventListener('click', function() {
+      setMode('simulate');
+    });
+
     var toolButtons = document.querySelectorAll('[data-tool]');
     toolButtons.forEach(function(btn) {
       btn.addEventListener('click', function() {
@@ -143,24 +201,13 @@
       }
     });
 
+    document.getElementById('btnUndo').addEventListener('click', function() {
+      editor.undo();
+    });
+
     document.getElementById('presetSelect').addEventListener('change', function(e) {
       loadPreset(e.target.value);
     });
-
-    // Checkbox toggles
-    var stressToggle = document.getElementById('toggleStress');
-    if (stressToggle) {
-      stressToggle.addEventListener('change', function(e) {
-        renderer.showStress = e.target.checked;
-      });
-    }
-
-    var traceToggle = document.getElementById('toggleTraces');
-    if (traceToggle) {
-      traceToggle.addEventListener('change', function(e) {
-        renderer.showTraces = e.target.checked;
-      });
-    }
   }
 
   function bindPlaybackControls() {
@@ -175,6 +222,7 @@
     btnPlay.addEventListener('click', function() {
       timeline.togglePlay();
       btnPlay.textContent = timeline.isPlaying ? 'Pause' : 'Play';
+      if (timeline.isPlaying) setMode('simulate');
     });
 
     btnStepBack.addEventListener('click', function() {
@@ -203,6 +251,23 @@
       timeline.setSpeed(parseFloat(e.target.value));
     });
 
+    // Checkboxes
+    var stressToggle = document.getElementById('toggleStress');
+    if (stressToggle) {
+      stressToggle.addEventListener('change', function(e) {
+        renderer.showStress = e.target.checked;
+        editor.renderer.showStress = e.target.checked;
+      });
+    }
+
+    var traceToggle = document.getElementById('toggleTraces');
+    if (traceToggle) {
+      traceToggle.addEventListener('change', function(e) {
+        renderer.showTraces = e.target.checked;
+        editor.renderer.showTraces = e.target.checked;
+      });
+    }
+
     timeline.onFrameChanged = function(curr, total, isPlaying) {
       timeSlider.max = Math.max(0, total - 1);
       timeSlider.value = curr;
@@ -215,92 +280,181 @@
     };
   }
 
-  function bindSimCanvasEvents() {
-    outcanvas.addEventListener('mousedown', function(e) {
-      var rect = outcanvas.getBoundingClientRect();
-      var sx = e.clientX - rect.left;
-      var sy = e.clientY - rect.top;
-      var wx = (sx - simPanX) / simZoom;
-      var wy = (sy - simPanY) / simZoom;
+  function bindKeyboardShortcuts() {
+    window.addEventListener('keydown', function(e) {
+      // Don't intercept if user is typing in an input
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
 
-      if (e.button === 1 || e.button === 2) {
-        simIsPanning = true;
-        simDragStartX = sx - simPanX;
-        simDragStartY = sy - simPanY;
+      if (e.code === 'Space') {
         e.preventDefault();
-        return;
-      }
-
-      // Check for node under cursor to drag interactively
-      var bestId = -1;
-      var bestDistSq = 20 * 20 / (simZoom * simZoom);
-      for (var i = 0; i < physics.numNodes; i++) {
-        var dSq = Math2D.distSq(wx, wy, physics.x[i], physics.y[i]);
-        if (dSq < bestDistSq) {
-          bestDistSq = dSq;
-          bestId = i;
+        timeline.togglePlay();
+        if (timeline.isPlaying) setMode('simulate');
+      } else if (e.key === 'v' || e.key === 'V') {
+        selectTool('select');
+      } else if (e.key === 'p' || e.key === 'P') {
+        selectTool('add_pin');
+      } else if (e.key === 'j' || e.key === 'J' || e.key === 'n' || e.key === 'N') {
+        selectTool('add_node');
+      } else if (e.key === 'r' || e.key === 'R') {
+        selectTool('add_rod');
+      } else if (e.key === 's' || e.key === 'S') {
+        selectTool('add_slider');
+      } else if (e.key === 'g' || e.key === 'G') {
+        selectTool('add_gear');
+      } else if (e.key === 'm' || e.key === 'M') {
+        selectTool('add_motor');
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (editor.selectedNodeId !== -1) {
+          editor.deleteNode(editor.selectedNodeId);
+          editor.selectedNodeId = -1;
         }
-      }
-
-      if (bestId !== -1 && !physics.isFixed[bestId]) {
-        simDraggingNode = bestId;
-      } else {
-        simIsPanning = true;
-        simDragStartX = sx - simPanX;
-        simDragStartY = sy - simPanY;
-      }
-    });
-
-    outcanvas.addEventListener('mousemove', function(e) {
-      var rect = outcanvas.getBoundingClientRect();
-      var sx = e.clientX - rect.left;
-      var sy = e.clientY - rect.top;
-
-      if (simIsPanning) {
-        simPanX = sx - simDragStartX;
-        simPanY = sy - simDragStartY;
-        return;
-      }
-
-      if (simDraggingNode !== -1) {
-        var wx = (sx - simPanX) / simZoom;
-        var wy = (sy - simPanY) / simZoom;
-        physics.x[simDraggingNode] = wx;
-        physics.y[simDraggingNode] = wy;
-        physics.vx[simDraggingNode] = 0;
-        physics.vy[simDraggingNode] = 0;
+      } else if (e.ctrlKey && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault();
+        editor.undo();
+      } else if (e.key === '[') {
+        timeline.stepBackward();
+      } else if (e.key === ']') {
+        timeline.stepForward();
       }
     });
+  }
 
-    window.addEventListener('mouseup', function() {
-      simDraggingNode = -1;
-      simIsPanning = false;
+  function selectTool(tool) {
+    setMode('edit');
+    var toolButtons = document.querySelectorAll('[data-tool]');
+    toolButtons.forEach(function(b) {
+      if (b.getAttribute('data-tool') === tool) b.classList.add('active');
+      else b.classList.remove('active');
     });
+    editor.setTool(tool);
+  }
 
-    outcanvas.addEventListener('wheel', function(e) {
-      e.preventDefault();
-      var rect = outcanvas.getBoundingClientRect();
-      var sx = e.clientX - rect.left;
-      var sy = e.clientY - rect.top;
-      var wx = (sx - simPanX) / simZoom;
-      var wy = (sy - simPanY) / simZoom;
+  function showContextMenu(clientX, clientY, targetType, targetData) {
+    if (!contextMenuEl) return;
+    contextMenuEl.innerHTML = '';
+    contextMenuEl.style.display = 'block';
 
-      var factor = e.deltaY < 0 ? 1.1 : 0.9;
-      simZoom = Math.max(0.2, Math.min(5.0, simZoom * factor));
-      simPanX = sx - wx * simZoom;
-      simPanY = sy - wy * simZoom;
-    });
+    // Position menu safely inside screen bounds
+    var menuW = 200;
+    var menuH = 180;
+    var x = Math.min(clientX, window.innerWidth - menuW - 10);
+    var y = Math.min(clientY, window.innerHeight - menuH - 10);
+    contextMenuEl.style.left = x + 'px';
+    contextMenuEl.style.top = y + 'px';
 
-    outcanvas.addEventListener('contextmenu', function(e) {
-      e.preventDefault();
-    });
+    var items = [];
+
+    if (targetType === 'node') {
+      var n = targetData;
+      items.push({
+        label: n.fixed ? 'Free Joint (Unanchor)' : 'Anchor Ground Pin',
+        action: function() { editor.toggleFixed(n.id); }
+      });
+      items.push({
+        label: 'Connect Rod From Here',
+        action: function() {
+          selectTool('add_rod');
+          editor.connectStartNode = n.id;
+          editor.isConnecting = true;
+        }
+      });
+      // Check if near gear to attach
+      var nearGear = editor.findGearNear(n.x, n.y);
+      if (nearGear !== -1) {
+        items.push({
+          label: 'Lock Node on Gear ' + nearGear,
+          action: function() { editor.attachNodeToGear(n.id, nearGear); }
+        });
+      }
+      items.push({
+        label: 'Delete Node',
+        danger: true,
+        action: function() { editor.deleteNode(n.id); }
+      });
+    } else if (targetType === 'gear') {
+      var gIdx = targetData.index;
+      items.push({
+        label: 'Add Crankpin on Gear Edge',
+        action: function() { editor.addCrankpinOnGear(gIdx); }
+      });
+      items.push({
+        label: 'Drive Gear with Motor',
+        action: function() {
+          var g = targetData.gear;
+          editor.addMotor(g.centerNode, g.centerNode, 3.0);
+        }
+      });
+      items.push({
+        label: 'Delete Gear',
+        danger: true,
+        action: function() { editor.deleteGear(gIdx); }
+      });
+    } else if (targetType === 'rod') {
+      var rIdx = targetData.index;
+      items.push({
+        label: 'Delete Rod',
+        danger: true,
+        action: function() {
+          editor.saveState();
+          editor.rods.splice(rIdx, 1);
+          editor._notifyChange();
+        }
+      });
+    } else {
+      // Empty space
+      var pos = targetData;
+      items.push({
+        label: 'Add Ground Pin',
+        action: function() { editor.addNode(pos.x, pos.y, true); }
+      });
+      items.push({
+        label: 'Add Free Joint',
+        action: function() { editor.addNode(pos.x, pos.y, false); }
+      });
+      items.push({
+        label: 'Add Gear Wheel',
+        action: function() {
+          var cId = editor.addNode(pos.x, pos.y, true);
+          editor.addGear(cId, 45, 15);
+        }
+      });
+      items.push({
+        label: 'Add Horizontal Slider Rail',
+        action: function() {
+          var a = editor.addNode(pos.x - 70, pos.y, true);
+          var b = editor.addNode(pos.x + 70, pos.y, true);
+          var s = editor.addNode(pos.x, pos.y, false);
+          editor.addSlider(s, a, b);
+        }
+      });
+    }
+
+    // Render context menu list
+    for (var i = 0; i < items.length; i++) {
+      (function(item) {
+        var div = document.createElement('div');
+        div.className = 'context-item' + (item.danger ? ' danger' : '');
+        div.textContent = item.label;
+        div.addEventListener('click', function(e) {
+          e.stopPropagation();
+          hideContextMenu();
+          item.action();
+        });
+        contextMenuEl.appendChild(div);
+      })(items[i]);
+    }
+  }
+
+  function hideContextMenu() {
+    if (contextMenuEl) {
+      contextMenuEl.style.display = 'none';
+    }
   }
 
   function loop(timestamp) {
     var dt = (timestamp - lastFrameTime) / 1000;
     lastFrameTime = timestamp;
 
-    // Clamp dt to avoid explosion on background tab
     if (dt > 0.1) dt = 0.1;
 
     // Track FPS
@@ -314,120 +468,21 @@
       if (fpsEl) fpsEl.textContent = currentFPS + ' FPS';
     }
 
-    // Step physics & timeline
-    timeline.update(dt);
+    // Step physics & timeline if in simulate mode
+    if (editor.mode === 'simulate') {
+      timeline.update(dt);
 
-    // Record motion trace for foot or end-effector nodes
-    if (physics.numNodes > 0 && timeline.isPlaying) {
-      var trackNode = physics.numNodes - 1; // Last node by default (e.g. foot / coupler tip)
-      renderer.recordTrace(trackNode, physics.x[trackNode], physics.y[trackNode]);
-    }
-
-    // Render simulation canvas
-    renderSimulation();
-
-    requestAnimationFrame(loop);
-  }
-
-  function renderSimulation() {
-    outctx.clearRect(0, 0, outcanvas.width, outcanvas.height);
-
-    // Grid lines
-    drawGrid(outctx, outcanvas, simPanX, simPanY, simZoom);
-
-    outctx.save();
-    outctx.translate(simPanX, simPanY);
-    outctx.scale(simZoom, simZoom);
-
-    // Render trace paths
-    renderer.drawTracePaths(outctx);
-
-    // Render Sliders
-    for (var sl = 0; sl < physics.sliders.length; sl++) {
-      var s = physics.sliders[sl];
-      var ax = physics.x[s.aNode], ay = physics.y[s.aNode];
-      var bx = physics.x[s.bNode], by = physics.y[s.bNode];
-      var px = physics.x[s.node],  py = physics.y[s.node];
-      renderer.drawSlider(outctx, ax, ay, bx, by, px, py);
-    }
-
-    // Render Gears
-    for (var gi = 0; gi < physics.gears.length; gi++) {
-      var gear = physics.gears[gi];
-      var cx = physics.x[gear.centerNode];
-      var cy = physics.y[gear.centerNode];
-      renderer.drawGear(outctx, cx, cy, gear.radius, gear.teeth, gear.angle);
-    }
-
-    // Render Rods
-    for (var r = 0; r < physics.rods.length; r++) {
-      var rod = physics.rods[r];
-      var x1 = physics.x[rod.a], y1 = physics.y[rod.a];
-      var x2 = physics.x[rod.b], y2 = physics.y[rod.b];
-      renderer.drawCapsuleLink(outctx, x1, y1, x2, y2, rod.width, rod.stress, rod.color);
-    }
-
-    // Render Motors
-    for (var m = 0; m < physics.motors.length; m++) {
-      var motor = physics.motors[m];
-      var cx = physics.x[motor.centerNode];
-      var cy = physics.y[motor.centerNode];
-      renderer.drawMotorIndicator(outctx, cx, cy, motor.radius, motor.speed);
-    }
-
-    // Render Nodes and Ground Pins
-    for (var i = 0; i < physics.numNodes; i++) {
-      var nx = physics.x[i];
-      var ny = physics.y[i];
-      if (physics.isFixed[i]) {
-        renderer.drawGroundAnchor(outctx, nx, ny, 16);
-      } else {
-        outctx.beginPath();
-        outctx.arc(nx, ny, 7, 0, Math.PI * 2);
-        outctx.fillStyle = (i === simDraggingNode) ? '#f59e0b' : '#0f172a';
-        outctx.fill();
-        outctx.lineWidth = 2;
-        outctx.strokeStyle = '#ffffff';
-        outctx.stroke();
+      // Record motion trace
+      if (physics.numNodes > 0 && timeline.isPlaying) {
+        var trackNode = physics.numNodes - 1;
+        renderer.recordTrace(trackNode, physics.x[trackNode], physics.y[trackNode]);
       }
     }
 
-    outctx.restore();
-  }
+    // Render the unified canvas
+    editor.render(physics);
 
-  function drawGrid(ctx, canvas, panX, panY, zoom) {
-    var w = canvas.width;
-    var h = canvas.height;
-    var gridSize = 40 * zoom;
-    var offsetX = panX % gridSize;
-    var offsetY = panY % gridSize;
-
-    ctx.save();
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = '#f1f5f9';
-
-    ctx.beginPath();
-    for (var x = offsetX; x < w; x += gridSize) {
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, h);
-    }
-    for (var y = offsetY; y < h; y += gridSize) {
-      ctx.moveTo(0, y);
-      ctx.lineTo(w, y);
-    }
-    ctx.stroke();
-
-    // Axis lines at world origin
-    ctx.beginPath();
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = '#e2e8f0';
-    ctx.moveTo(panX, 0);
-    ctx.lineTo(panX, h);
-    ctx.moveTo(0, panY);
-    ctx.lineTo(w, panY);
-    ctx.stroke();
-
-    ctx.restore();
+    requestAnimationFrame(loop);
   }
 
   window.addEventListener('DOMContentLoaded', init);
